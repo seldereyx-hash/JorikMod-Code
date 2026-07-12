@@ -1,0 +1,918 @@
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local HttpService = game:GetService("HttpService")
+local TeleportService = game:GetService("TeleportService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local SoundService = game:GetService("SoundService")
+local StarterGui = game:GetService("StarterGui")
+local TweenService = game:GetService("TweenService")
+local Camera = Workspace.CurrentCamera
+local Mouse = LocalPlayer:GetMouse()
+
+local Theme = {
+    Background = Color3.fromRGB(20, 15, 30),
+    FrameBg = Color3.fromRGB(30, 22, 45),
+    Accent = Color3.fromRGB(170, 0, 255),
+    AccentLight = Color3.fromRGB(200, 80, 255),
+    Text = Color3.fromRGB(255, 255, 255),
+    TextDark = Color3.fromRGB(180, 170, 190),
+    ToggleOff = Color3.fromRGB(50, 35, 70),
+    ToggleOn = Color3.fromRGB(170, 0, 255),
+    Separator = Color3.fromRGB(60, 45, 85)
+}
+
+local Flying = false
+local FlyV2Enabled = false
+local Noclipping = false
+local SpeedEnabled = false
+local JumpEnabled = false
+local GravityEnabled = false
+local SpinEnabled = false
+local RingVisualEnabled = false
+local RingPartsEnabled = false
+local AimbotEnabled = false
+local ESPEnabled = false
+local ESPV2Enabled = false
+local AntiAFKEnabled = false
+local FreecamEnabled = false
+local InvisibleEnabled = false
+
+local FlyConnection, FlyV2Connection, NoclipConnection, JumpConnection, GravityConnection
+local SpinConnection, RingVisualConnection, RingPartsConnection, AimbotConnection
+local ESPConnection, ESPV2Connection, AntiAFKConnection, FreecamConnection
+
+local currentSpeed = 16
+local currentGravity = 196.2
+local currentSpinSpeed = 10
+local ringVisualRadius = 10
+local ringVisualSpeed = 5
+local ringVisualParts = {}
+local ringVisualAngles = {}
+local flyV2Speed = 50
+local aimbotFOV = 120
+local aimbotSmoothness = 0.25
+local espObjects = {}
+
+local ringPartsConfig = {
+    radius = 50,
+    height = 100,
+    rotationSpeed = 10,
+    attractionStrength = 1000,
+}
+
+local ringPartsData = {
+    parts = {},
+    attachment = nil,
+    folder = nil,
+}
+
+local function tweenColor(instance, property, toColor, duration)
+    TweenService:Create(instance, TweenInfo.new(duration or 0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {[property] = toColor}):Play()
+end
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Parent = (game:GetService("CoreGui") or LocalPlayer:WaitForChild("PlayerGui"))
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+local DragButton = Instance.new("TextButton")
+DragButton.Parent = ScreenGui
+DragButton.Size = UDim2.new(0, 50, 0, 50)
+DragButton.Position = UDim2.new(0.1, 0, 0.5, -25)
+DragButton.BackgroundColor3 = Theme.FrameBg
+DragButton.TextColor3 = Theme.Text
+DragButton.Text = "J"
+DragButton.Font = Enum.Font.SourceSansBold
+DragButton.TextSize = 24
+DragButton.BorderSizePixel = 0
+DragButton.Active = true
+Instance.new("UICorner", DragButton).CornerRadius = UDim.new(0, 10)
+local DragStroke = Instance.new("UIStroke", DragButton)
+DragStroke.Color = Theme.Accent
+DragStroke.Thickness = 2
+
+local dragging, dragInput, dragStart, startPos
+DragButton.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = DragButton.Position
+        tweenColor(DragButton, "BackgroundColor3", Theme.Accent, 0.1)
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+                tweenColor(DragButton, "BackgroundColor3", Theme.FrameBg, 0.2)
+            end
+        end)
+    end
+end)
+
+DragButton.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and input == dragInput then
+        local delta = input.Position - dragStart
+        TweenService:Create(DragButton, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        }):Play()
+    end
+end)
+
+local MainGui = Instance.new("ScreenGui")
+MainGui.Parent = ScreenGui.Parent
+MainGui.Enabled = false
+MainGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Parent = MainGui
+MainFrame.Size = UDim2.new(0, 260, 0, 320)
+MainFrame.Position = UDim2.new(0.5, -130, 0.5, -160)
+MainFrame.BackgroundColor3 = Theme.Background
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.ClipsDescendants = true
+
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 12)
+local MainStroke = Instance.new("UIStroke", MainFrame)
+MainStroke.Color = Theme.Accent
+MainStroke.Thickness = 2
+
+local frameDragging, frameDragStart, frameStartPos
+MainFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        frameDragging = true
+        frameDragStart = input.Position
+        frameStartPos = MainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then frameDragging = false end
+        end)
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if frameDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - frameDragStart
+        MainFrame.Position = UDim2.new(frameStartPos.X.Scale, frameStartPos.X.Offset + delta.X, frameStartPos.Y.Scale, frameStartPos.Y.Offset + delta.Y)
+    end
+end)
+
+local Title = Instance.new("TextLabel")
+Title.Parent = MainFrame
+Title.Size = UDim2.new(0, 90, 0, 35)
+Title.Position = UDim2.new(0, 12, 0, 5)
+Title.BackgroundTransparency = 1
+Title.Text = "JorikMOD"
+Title.TextColor3 = Theme.AccentLight
+Title.Font = Enum.Font.SourceSansBold
+Title.TextSize = 18
+Title.TextXAlignment = Enum.TextXAlignment.Left
+
+local TabContainer = Instance.new("Frame")
+TabContainer.Parent = MainFrame
+TabContainer.Size = UDim2.new(0, 140, 0, 26)
+TabContainer.Position = UDim2.new(1, -150, 0, 9)
+TabContainer.BackgroundTransparency = 1
+
+local CheatsTabBtn = Instance.new("TextButton")
+CheatsTabBtn.Parent = TabContainer
+CheatsTabBtn.Size = UDim2.new(0, 65, 1, 0)
+CheatsTabBtn.Position = UDim2.new(0, 0, 0, 0)
+CheatsTabBtn.BackgroundColor3 = Theme.Accent
+CheatsTabBtn.TextColor3 = Theme.Text
+CheatsTabBtn.Text = "Читы"
+CheatsTabBtn.Font = Enum.Font.SourceSansBold
+CheatsTabBtn.TextSize = 13
+Instance.new("UICorner", CheatsTabBtn).CornerRadius = UDim.new(0, 6)
+
+local AccountTabBtn = Instance.new("TextButton")
+AccountTabBtn.Parent = TabContainer
+AccountTabBtn.Size = UDim2.new(0, 65, 1, 0)
+AccountTabBtn.Position = UDim2.new(0, 72, 0, 0)
+AccountTabBtn.BackgroundColor3 = Theme.ToggleOff
+AccountTabBtn.TextColor3 = Theme.TextDark
+AccountTabBtn.Text = "Аккаунт"
+AccountTabBtn.Font = Enum.Font.SourceSansBold
+AccountTabBtn.TextSize = 13
+Instance.new("UICorner", AccountTabBtn).CornerRadius = UDim.new(0, 6)
+
+local ScrollingFrame = Instance.new("ScrollingFrame")
+ScrollingFrame.Parent = MainFrame
+ScrollingFrame.Size = UDim2.new(1, -10, 1, -50)
+ScrollingFrame.Position = UDim2.new(0, 5, 0, 45)
+ScrollingFrame.BackgroundTransparency = 1
+ScrollingFrame.BorderSizePixel = 0
+ScrollingFrame.ScrollBarThickness = 4
+ScrollingFrame.ScrollBarImageColor3 = Theme.Accent
+ScrollingFrame.Visible = true
+
+local AccountFrame = Instance.new("ScrollingFrame")
+AccountFrame.Parent = MainFrame
+AccountFrame.Size = UDim2.new(1, -10, 1, -50)
+AccountFrame.Position = UDim2.new(0, 5, 0, 45)
+AccountFrame.BackgroundTransparency = 1
+AccountFrame.BorderSizePixel = 0
+AccountFrame.ScrollBarThickness = 4
+AccountFrame.ScrollBarImageColor3 = Theme.Accent
+AccountFrame.Visible = false
+
+local AccountListLayout = Instance.new("UIListLayout")
+AccountListLayout.Parent = AccountFrame
+AccountListLayout.Padding = UDim.new(0, 8)
+AccountListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+AccountListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+AccountListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    AccountFrame.CanvasSize = UDim2.new(0, 0, 0, AccountListLayout.AbsoluteContentSize.Y + 20)
+end)
+
+CheatsTabBtn.MouseButton1Click:Connect(function()
+    CheatsTabBtn.BackgroundColor3 = Theme.Accent
+    CheatsTabBtn.TextColor3 = Theme.Text
+    AccountTabBtn.BackgroundColor3 = Theme.ToggleOff
+    AccountTabBtn.TextColor3 = Theme.TextDark
+    ScrollingFrame.Visible = true
+    AccountFrame.Visible = false
+end)
+
+AccountTabBtn.MouseButton1Click:Connect(function()
+    AccountTabBtn.BackgroundColor3 = Theme.Accent
+    AccountTabBtn.TextColor3 = Theme.Text
+    CheatsTabBtn.BackgroundColor3 = Theme.ToggleOff
+    CheatsTabBtn.TextColor3 = Theme.TextDark
+    AccountFrame.Visible = true
+    ScrollingFrame.Visible = false
+end)
+
+local UIListLayout = Instance.new("UIListLayout")
+UIListLayout.Parent = ScrollingFrame
+UIListLayout.Padding = UDim.new(0, 6)
+UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+UIListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    ScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, UIListLayout.AbsoluteContentSize.Y + 20)
+end)
+
+local function createButton(parent, name, layoutOrder)
+    local button = Instance.new("TextButton")
+    button.Parent = parent
+    button.Size = UDim2.new(1, -14, 0, 38)
+    button.BackgroundColor3 = Theme.ToggleOff
+    button.TextColor3 = Theme.Text
+    button.Text = name
+    button.Font = Enum.Font.SourceSansBold
+    button.TextSize = 14
+    button.BorderSizePixel = 0
+    button.LayoutOrder = layoutOrder
+    Instance.new("UICorner", button).CornerRadius = UDim.new(0, 8)
+    return button
+end
+
+local function setToggleState(button, state)
+    if state then
+        tweenColor(button, "BackgroundColor3", Theme.ToggleOn, 0.2)
+    else
+        tweenColor(button, "BackgroundColor3", Theme.ToggleOff, 0.2)
+    end
+end
+
+local function createLabel(parent, text, layoutOrder)
+    local label = Instance.new("TextLabel")
+    label.Parent = parent
+    label.Size = UDim2.new(1, -14, 0, 18)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = Theme.TextDark
+    label.Font = Enum.Font.SourceSans
+    label.TextSize = 13
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.LayoutOrder = layoutOrder
+    return label
+end
+
+local function createTextBox(parent, placeholder, layoutOrder)
+    local row = Instance.new("Frame")
+    row.Parent = parent
+    row.Size = UDim2.new(1, -14, 0, 28)
+    row.BackgroundTransparency = 1
+    row.LayoutOrder = layoutOrder
+    
+    local box = Instance.new("TextBox")
+    box.Parent = row
+    box.Size = UDim2.new(1, 0, 1, 0)
+    box.BackgroundColor3 = Color3.fromRGB(45, 35, 60)
+    box.TextColor3 = Theme.Text
+    box.Text = ""
+    box.PlaceholderText = placeholder
+    box.PlaceholderColor3 = Color3.fromRGB(120, 110, 140)
+    box.Font = Enum.Font.SourceSans
+    box.TextSize = 13
+    box.BorderSizePixel = 0
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0, 6)
+    return box, row
+end
+
+local function createSeparator(parent, layoutOrder)
+    local line = Instance.new("Frame")
+    line.Parent = parent
+    line.Size = UDim2.new(1, -20, 0, 2)
+    line.BackgroundColor3 = Theme.Separator
+    line.BorderSizePixel = 0
+    line.LayoutOrder = layoutOrder
+    return line
+end
+
+local FlyControls = Instance.new("Frame")
+FlyControls.Size = UDim2.new(0, 55, 0, 110)
+FlyControls.Position = UDim2.new(0.85, -25, 0.5, -55)
+FlyControls.BackgroundTransparency = 1
+FlyControls.Visible = false
+FlyControls.Parent = ScreenGui
+
+local UpBtn = Instance.new("TextButton", FlyControls)
+UpBtn.Size = UDim2.new(1, 0, 0, 50)
+UpBtn.BackgroundColor3 = Theme.FrameBg
+UpBtn.TextColor3 = Theme.Text
+UpBtn.Text = "▲"
+UpBtn.Font = Enum.Font.SourceSansBold
+UpBtn.TextSize = 20
+Instance.new("UICorner", UpBtn).CornerRadius = UDim.new(0, 8)
+Instance.new("UIStroke", UpBtn).Color = Theme.Accent
+
+local DownBtn = Instance.new("TextButton", FlyControls)
+DownBtn.Size = UDim2.new(1, 0, 0, 50)
+DownBtn.Position = UDim2.new(0, 0, 0, 60)
+DownBtn.BackgroundColor3 = Theme.FrameBg
+DownBtn.TextColor3 = Theme.Text
+DownBtn.Text = "▼"
+DownBtn.Font = Enum.Font.SourceSansBold
+DownBtn.TextSize = 20
+Instance.new("UICorner", DownBtn).CornerRadius = UDim.new(0, 8)
+Instance.new("UIStroke", DownBtn).Color = Theme.Accent
+
+local goUp, goDown = false, false
+UpBtn.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then goUp = true end end)
+UpBtn.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then goUp = false end end)
+DownBtn.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then goDown = true end end)
+DownBtn.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then goDown = false end end)
+
+local function getMobileMoveDirection()
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChild("Humanoid")
+    if hum and hum.MoveDirection.Magnitude > 0 then return hum.MoveDirection.Unit end
+    return Vector3.zero
+end
+
+local function startFly()
+    Flying = true
+    FlyControls.Visible = true
+    local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    local humanoid = character:WaitForChild("Humanoid")
+    local hrp = character:WaitForChild("HumanoidRootPart")
+    
+    FlyConnection = RunService.RenderStepped:Connect(function()
+        if not Flying then return end
+        humanoid.PlatformStand = true
+        local moveDirection = getMobileMoveDirection() * 50
+        local vertical = 0
+        if goUp then vertical = 40 elseif goDown then vertical = -40 end
+        hrp.Velocity = Vector3.new(moveDirection.X, vertical, moveDirection.Z)
+    end)
+end
+
+local function stopFly()
+    Flying = false
+    FlyControls.Visible = false
+    if FlyConnection then FlyConnection:Disconnect(); FlyConnection = nil end
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        LocalPlayer.Character.Humanoid.PlatformStand = false
+    end
+end
+
+local function startFlyV2()
+    FlyV2Enabled = true
+    local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    local humanoid = character:WaitForChild("Humanoid")
+    local hrp = character:WaitForChild("HumanoidRootPart")
+    
+    local function getIYDirection()
+        local dir = getMobileMoveDirection()
+        if dir.Magnitude == 0 then return Vector3.zero end
+        local camCFrame = Camera.CFrame
+        return (camCFrame.RightVector * (dir.X) + camCFrame.LookVector * (-dir.Z)).Unit
+    end
+
+    FlyV2Connection = RunService.RenderStepped:Connect(function()
+        if not FlyV2Enabled then return end
+        humanoid.PlatformStand = true
+        local flyDir = getIYDirection()
+        hrp.Velocity = flyDir * flyV2Speed
+    end)
+end
+
+local function stopFlyV2()
+    FlyV2Enabled = false
+    if FlyV2Connection then FlyV2Connection:Disconnect(); FlyV2Connection = nil end
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        LocalPlayer.Character.Humanoid.PlatformStand = false
+    end
+end
+
+local FlyButton = createButton(ScrollingFrame, "FLY V1 (С КНОПКАМИ)", 1)
+local FlyV2Button = createButton(ScrollingFrame, "FLY V2 (IY CAMERA)", 2)
+local NoclipButton = createButton(ScrollingFrame, "NOCLIP", 3)
+local JumpButton = createButton(ScrollingFrame, "JUMP HACK", 4)
+local SpinButton = createButton(ScrollingFrame, "SPIN", 5)
+local RingVisualButton = createButton(ScrollingFrame, "RING VISUAL", 6)
+local RingPartsButton = createButton(ScrollingFrame, "RING PARTS", 7)
+local AimbotButton = createButton(ScrollingFrame, "AIMBOT", 8)
+local ESPButton = createButton(ScrollingFrame, "ESP", 9)
+local ESPV2Button = createButton(ScrollingFrame, "ESP V2", 10)
+local AntiAFKButton = createButton(ScrollingFrame, "ANTI AFK", 11)
+local FreecamButton = createButton(ScrollingFrame, "FREECAM", 12)
+local InvisibleButton = createButton(ScrollingFrame, "INVISIBLE", 13)
+local ServerHopButton = createButton(ScrollingFrame, "SERVER HOP", 14)
+
+local CustomTitle = createLabel(ScrollingFrame, "--- Настройки Модов ---", 15)
+CustomTitle.TextColor3 = Theme.AccentLight
+
+createSeparator(ScrollingFrame, 16)
+
+local SpeedLabel = createLabel(ScrollingFrame, "Скорость: 16", 17)
+local SpeedBox, SpeedRow = createTextBox(ScrollingFrame, "WalkSpeed", 18)
+
+createSeparator(ScrollingFrame, 19)
+
+local GravityLabel = createLabel(ScrollingFrame, "Гравитация: 196.2", 20)
+local GravityBox, GravityRow = createTextBox(ScrollingFrame, "Гравитация", 21)
+
+createSeparator(ScrollingFrame, 22)
+
+local SpinSpeedLabel = createLabel(ScrollingFrame, "Настройка вращения:", 23)
+local SpinSpeedBox, SpinRow = createTextBox(ScrollingFrame, "Скорость вращения", 24)
+
+createSeparator(ScrollingFrame, 25)
+
+local ChatSpooferTitle = createLabel(ScrollingFrame, "Функция Чат Спуфа:", 26)
+local ChatSpooferNameBox, ChatSpooferNameRow = createTextBox(ScrollingFrame, "Никнейм для спуфа", 27)
+local ChatSpooferMsgBox, ChatSpooferMsgRow = createTextBox(ScrollingFrame, "Текст сообщения", 28)
+local ChatSpooferSendButton = createButton(ScrollingFrame, "ОТПРАВИТЬ СПУФ", 29)
+
+createSeparator(ScrollingFrame, 30)
+
+local TPPlayerList = Instance.new("ScrollingFrame")
+TPPlayerList.Parent = ScrollingFrame
+TPPlayerList.Size = UDim2.new(1, -14, 0, 90)
+TPPlayerList.BackgroundTransparency = 0.5
+TPPlayerList.BackgroundColor3 = Color3.fromRGB(15, 10, 25)
+TPPlayerList.BorderSizePixel = 0
+TPPlayerList.LayoutOrder = 31
+local TPPlayerListLayout = Instance.new("UIListLayout", TPPlayerList)
+TPPlayerListLayout.Padding = UDim.new(0, 4)
+
+local function updateTPPlayerList()
+    for _, child in ipairs(TPPlayerList:GetChildren()) do if child:IsA("TextButton") then child:Destroy() end end
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local pBtn = Instance.new("TextButton", TPPlayerList)
+            pBtn.Size = UDim2.new(1, -6, 0, 24)
+            pBtn.BackgroundColor3 = Color3.fromRGB(45, 30, 65)
+            pBtn.TextColor3 = Theme.Text
+            pBtn.Text = "ТП к: " .. player.DisplayName
+            pBtn.Font = Enum.Font.SourceSans
+            pBtn.TextSize = 12
+            Instance.new("UICorner", pBtn).CornerRadius = UDim.new(0, 4)
+            pBtn.MouseButton1Click:Connect(function()
+                if player.Character and player.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                    LocalPlayer.Character.HumanoidRootPart.CFrame = player.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, -3)
+                end
+            end)
+        end
+    end
+end
+
+local SearchLabel = createLabel(AccountFrame, "Глобальный поиск (Roblox):", 1)
+local SearchBox, SearchRow = createTextBox(AccountFrame, "Введите точный Username...", 2)
+
+local AvatarImage = Instance.new("ImageLabel")
+AvatarImage.Parent = AccountFrame
+AvatarImage.Size = UDim2.new(0, 80, 0, 80)
+AvatarImage.BackgroundColor3 = Theme.FrameBg
+AvatarImage.BorderSizePixel = 0
+AvatarImage.LayoutOrder = 3
+local AvatarCorner = Instance.new("UICorner", AvatarImage)
+AvatarCorner.CornerRadius = UDim.new(0, 10)
+local AvatarStroke = Instance.new("UIStroke", AvatarImage)
+AvatarStroke.Color = Theme.Accent
+AvatarStroke.Thickness = 1.5
+
+local NameContainer = Instance.new("Frame")
+NameContainer.Parent = AccountFrame
+NameContainer.Size = UDim2.new(1, -14, 0, 24)
+NameContainer.BackgroundTransparency = 1
+NameContainer.LayoutOrder = 4
+local NameContainerLayout = Instance.new("UIListLayout", NameContainer)
+NameContainerLayout.FillDirection = Enum.FillDirection.Horizontal
+NameContainerLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+NameContainerLayout.Padding = UDim.new(0, 6)
+
+local UsernameLabel = Instance.new("TextLabel", NameContainer)
+UsernameLabel.Size = UDim2.new(0, 0, 1, 0)
+UsernameLabel.AutomaticSize = Enum.AutomaticSize.X
+UsernameLabel.BackgroundTransparency = 1
+UsernameLabel.TextColor3 = Theme.Text
+UsernameLabel.Font = Enum.Font.SourceSansBold
+UsernameLabel.TextSize = 14
+
+local OwnerBadge = Instance.new("TextLabel", NameContainer)
+OwnerBadge.Size = UDim2.new(0, 52, 0, 18)
+OwnerBadge.BackgroundColor3 = Theme.Accent
+OwnerBadge.TextColor3 = Theme.Text
+OwnerBadge.Text = "Owner"
+OwnerBadge.Font = Enum.Font.SourceSansBold
+OwnerBadge.TextSize = 11
+OwnerBadge.Visible = false
+local BadgeCorner = Instance.new("UICorner", OwnerBadge)
+BadgeCorner.CornerRadius = UDim.new(1, 0)
+
+local DisplayNameLabel = createLabel(AccountFrame, "Display Name: N/A", 5)
+local AccountAgeLabel = createLabel(AccountFrame, "Возраст аккаунта: N/A дней", 6)
+
+createSeparator(AccountFrame, 7)
+
+local JoinTargetButton = createButton(AccountFrame, "ЗАЙТИ НА СЕРВЕР К ИГРОКУ", 8)
+JoinTargetButton.BackgroundColor3 = Color3.fromRGB(80, 15, 140)
+
+local currentTargetUserId = LocalPlayer.UserId
+
+local function updateAccountInfoPanel(userId, username, displayName)
+    currentTargetUserId = userId
+    UsernameLabel.Text = "@" .. username
+    DisplayNameLabel.Text = "Display Name: " .. displayName
+    
+    local ageText = "N/A дней"
+    pcall(function()
+        if userId == LocalPlayer.UserId then
+            ageText = tostring(LocalPlayer.AccountAge) .. " дней"
+        else
+            local targetOnServer = Players:GetPlayerByUserId(userId)
+            if targetOnServer then
+                ageText = tostring(targetOnServer.AccountAge) .. " дней"
+            else
+                ageText = "Скрыт (Не на сервере)"
+            end
+        end
+    end)
+    AccountAgeLabel.Text = "Возраст аккаунта: " .. ageText
+    
+    if username == "LaVaccaSatty" or username == "ITZ_BECON061" then
+        OwnerBadge.Visible = true
+    else
+        OwnerBadge.Visible = false
+    end
+    
+    local success, content = pcall(function()
+        return Players:GetUserThumbnailAsync(userId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100)
+    end)
+    if success then
+        AvatarImage.Image = content
+    else
+        AvatarImage.Image = "rbxassetid://0"
+    end
+end
+
+SearchBox.FocusLost:Connect(function()
+    local text = SearchBox.Text:gsub("%s+", "")
+    if text == "" then
+        updateAccountInfoPanel(LocalPlayer.UserId, LocalPlayer.Name, LocalPlayer.DisplayName)
+        return
+    end
+    
+    local serverPlayer = nil
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p.Name:lower() == text:lower() then
+            serverPlayer = p
+            break
+        end
+    end
+    
+    if serverPlayer then
+        updateAccountInfoPanel(serverPlayer.UserId, serverPlayer.Name, serverPlayer.DisplayName)
+    else
+        task.spawn(function()
+            local success, userId = pcall(function()
+                return Players:GetUserIdFromNameAsync(text)
+            end)
+            
+            if success and userId then
+                local nameSuccess, targetName = pcall(function() return Players:GetNameFromUserIdAsync(userId) end)
+                updateAccountInfoPanel(userId, targetName or text, targetName or text)
+            else
+                SearchBox.Text = "Игрок не найден!"
+                task.wait(1.5)
+                SearchBox.Text = ""
+            end
+        end)
+    end
+end)
+
+JoinTargetButton.MouseButton1Click:Connect(function()
+    if currentTargetUserId == LocalPlayer.UserId then return end
+    
+    local targetOnServer = Players:GetPlayerByUserId(currentTargetUserId)
+    if targetOnServer and targetOnServer.Character and targetOnServer.Character:FindFirstChild("HumanoidRootPart") then
+        local myHrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if myHrp then
+            myHrp.CFrame = targetOnServer.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, -3)
+        end
+    else
+        pcall(function()
+            TeleportService:TeleportUserToServer(game.PlaceId, currentTargetUserId)
+        end)
+    end
+end)
+
+updateAccountInfoPanel(LocalPlayer.UserId, LocalPlayer.Name, LocalPlayer.DisplayName)
+
+FlyButton.MouseButton1Click:Connect(function()
+    Flying = not Flying; setToggleState(FlyButton, Flying)
+    if Flying then stopFlyV2(); setToggleState(FlyV2Button, false); startFly() else stopFly() end
+end)
+
+FlyV2Button.MouseButton1Click:Connect(function()
+    FlyV2Enabled = not FlyV2Enabled; setToggleState(FlyV2Button, FlyV2Enabled)
+    if FlyV2Enabled then stopFly(); setToggleState(FlyButton, false); startFlyV2() else stopFlyV2() end
+end)
+
+NoclipButton.MouseButton1Click:Connect(function()
+    Noclipping = not Noclipping; setToggleState(NoclipButton, Noclipping)
+    if Noclipping then
+        NoclipConnection = RunService.Stepped:Connect(function()
+            if not Noclipping then return end
+            if LocalPlayer.Character then
+                for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
+                    if part:IsA("BasePart") and part.CanCollide then part.CanCollide = false end
+                end
+            end
+        end)
+    else
+        if NoclipConnection then NoclipConnection:Disconnect(); NoclipConnection = nil end
+        if LocalPlayer.Character then
+            for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
+                if part:IsA("BasePart") then part.CanCollide = true end
+            end
+        end
+    end
+end)
+
+JumpButton.MouseButton1Click:Connect(function()
+    JumpEnabled = not JumpEnabled; setToggleState(JumpButton, JumpEnabled)
+    if JumpEnabled then
+        JumpConnection = UserInputService.JumpRequest:Connect(function()
+            local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then hrp.Velocity = Vector3.new(hrp.Velocity.X, 50, hrp.Velocity.Z) end
+        end)
+    else if JumpConnection then JumpConnection:Disconnect() end end
+end)
+
+local currentSpinSpeed = 10
+SpinButton.MouseButton1Click:Connect(function()
+    SpinEnabled = not SpinEnabled; setToggleState(SpinButton, SpinEnabled)
+    if SpinEnabled then
+        SpinConnection = RunService.RenderStepped:Connect(function()
+            local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then 
+                hrp.CFrame = hrp.CFrame * CFrame.Angles(0, math.rad(currentSpinSpeed), 0) 
+            end
+        end)
+    else 
+        if SpinConnection then SpinConnection:Disconnect(); SpinConnection = nil end 
+    end
+end)
+
+SpinSpeedBox.FocusLost:Connect(function()
+    currentSpinSpeed = tonumber(SpinSpeedBox.Text) or 10
+end)
+
+local ringVisualRadius = 10
+local ringVisualSpeed = 5
+RingVisualButton.MouseButton1Click:Connect(function()
+    RingVisualEnabled = not RingVisualEnabled; setToggleState(RingVisualButton, RingVisualEnabled)
+    if RingVisualEnabled then
+        table.clear(ringVisualParts); table.clear(ringVisualAngles)
+        local count = 0
+        for _, p in ipairs(Workspace:GetDescendants()) do
+            if count >= 150 then break end
+            if p:IsA("BasePart") and not p.Anchored and p.Parent and p.Parent ~= LocalPlayer.Character then
+                table.insert(ringVisualParts, p); table.insert(ringVisualAngles, count * (math.pi * 2 / 150))
+                count = count + 1
+            end
+        end
+        RingVisualConnection = RunService.Heartbeat:Connect(function()
+            local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if not hrp then return end
+            for i, part in ipairs(ringVisualParts) do
+                if part and part.Parent then
+                    pcall(function()
+                        local angle = ringVisualAngles[i] + (tick() * ringVisualSpeed)
+                        part.Velocity = Vector3.zero
+                        part.CFrame = CFrame.new(hrp.Position + Vector3.new(math.cos(angle) * ringVisualRadius, 0, math.sin(angle) * ringVisualRadius))
+                    end)
+                end
+            end
+        end)
+    else if RingVisualConnection then RingVisualConnection:Disconnect() end end
+end)
+
+RingPartsButton.MouseButton1Click:Connect(function()
+    RingPartsEnabled = not RingPartsEnabled; setToggleState(RingPartsButton, RingPartsEnabled)
+    if RingPartsEnabled then
+        ringPartsData.folder = Instance.new("Folder", Workspace)
+        local part = Instance.new("Part", ringPartsData.folder)
+        part.Anchored = true; part.CanCollide = false; part.Transparency = 1
+        ringPartsData.attachment = Instance.new("Attachment", part)
+        local sethp = shiddenproperty or set_hidden_property or sethiddenproperty
+        RingPartsConnection = RunService.Heartbeat:Connect(function()
+            local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if hrp and ringPartsData.attachment then
+                if sethp then pcall(function() sethp(LocalPlayer, "SimulationRadius", math.huge) end) end
+                ringPartsData.attachment.WorldPosition = hrp.Position
+                for _, p in pairs(Workspace:GetDescendants()) do
+                    if p:IsA("BasePart") and not p.Anchored and p.Parent ~= LocalPlayer.Character then
+                        p.CanCollide = false
+                        local diff = (p.Position - hrp.Position)
+                        if diff.Magnitude < ringPartsConfig.radius then
+                            p.Velocity = diff.Unit * -ringPartsConfig.attractionStrength
+                        end
+                    end
+                end
+            end
+        end)
+    else
+        if RingPartsConnection then RingPartsConnection:Disconnect() end
+        if ringPartsData.folder then ringPartsData.folder:Destroy() end
+    end
+end)
+
+local aimbotFOV = 120
+local aimbotSmoothness = 0.25
+AimbotButton.MouseButton1Click:Connect(function()
+    AimbotEnabled = not AimbotEnabled; setToggleState(AimbotButton, AimbotEnabled)
+    if AimbotEnabled then
+        AimbotConnection = RunService.RenderStepped:Connect(function()
+            local target, closest = nil, aimbotFOV
+            local centerScreen = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+            
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("Head") and p.Character:FindFirstChildOfClass("Humanoid") and p.Character:FindFirstChildOfClass("Humanoid").Health > 0 then
+                    local head = p.Character.Head
+                    local pos, onScreen = Camera:WorldToViewportPoint(head.Position)
+                    if onScreen then
+                        local dist = (Vector2.new(pos.X, pos.Y) - centerScreen).Magnitude
+                        if dist < closest then
+                            closest = dist
+                            target = head
+                        end
+                    end
+                end
+            end
+            
+            if target then
+                local targetCFrame = CFrame.lookAt(Camera.CFrame.Position, target.Position)
+                Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, aimbotSmoothness)
+            end
+        end)
+    else
+        if AimbotConnection then AimbotConnection:Disconnect(); AimbotConnection = nil end
+    end
+end)
+
+ESPButton.MouseButton1Click:Connect(function()
+    ESPEnabled = not ESPEnabled; setToggleState(ESPButton, ESPEnabled)
+    if ESPEnabled then
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character then
+                local hl = Instance.new("Highlight", p.Character)
+                hl.FillColor = Theme.Accent; espObjects[p] = hl
+            end
+        end
+    else
+        for _, hl in pairs(espObjects) do if hl then hl:Destroy() end end; table.clear(espObjects)
+    end
+end)
+
+ESPV2Button.MouseButton1Click:Connect(function()
+    ESPV2Enabled = not ESPV2Enabled; setToggleState(ESPV2Button, ESPV2Enabled)
+    if ESPV2Enabled then
+        ESPV2Connection = RunService.RenderStepped:Connect(function()
+            local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Head") then
+                    local head = player.Character.Head
+                    local bb = head:FindFirstChild("MobileESP") or Instance.new("BillboardGui", head)
+                    bb.Name = "MobileESP"; bb.Size = UDim2.new(0, 100, 0, 30); bb.AlwaysOnTop = true
+                    local lbl = bb:FindFirstChild("Label") or Instance.new("TextLabel", bb)
+                    lbl.Name = "Label"; lbl.Size = UDim2.new(1, 0, 1, 0); lbl.BackgroundTransparency = 1
+                    lbl.TextColor3 = Theme.AccentLight; lbl.Font = Enum.Font.SourceSansBold; lbl.TextSize = 11
+                    local dist = myRoot and math.floor((head.Position - myRoot.Position).Magnitude) or 0
+                    lbl.Text = player.Name .. " [" .. dist .. "m]"
+                end
+            end
+        end)
+    else
+        if ESPV2Connection then ESPV2Connection:Disconnect() end
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p.Character and p.Character:FindFirstChild("Head") and p.Character.Head:FindFirstChild("MobileESP") then p.Character.Head.MobileESP:Destroy() end
+        end
+    end
+end)
+
+AntiAFKButton.MouseButton1Click:Connect(function()
+    AntiAFKEnabled = not AntiAFKEnabled; setToggleState(AntiAFKButton, AntiAFKEnabled)
+    if AntiAFKEnabled then
+        AntiAFKConnection = LocalPlayer.Idled:Connect(function()
+            local vu = game:GetService("VirtualUser")
+            vu:CaptureController(); vu:ClickButton2(Vector2.new())
+        end)
+    else if AntiAFKConnection then AntiAFKConnection:Disconnect() end end
+end)
+
+FreecamButton.MouseButton1Click:Connect(function()
+    FreecamEnabled = not FreecamEnabled; setToggleState(FreecamButton, FreecamEnabled)
+    if FreecamEnabled then
+        Camera.CameraType = Enum.CameraType.Scriptable
+        FreecamConnection = RunService.RenderStepped:Connect(function()
+            Camera.CFrame = Camera.CFrame + getMobileMoveDirection() * 2
+        end)
+    else
+        if FreecamConnection then FreecamConnection:Disconnect() end
+        Camera.CameraType = Enum.CameraType.Custom
+        Camera.CameraSubject = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
+    end
+end)
+
+ChatSpooferSendButton.MouseButton1Click:Connect(function()
+    local target, msg = ChatSpooferNameBox.Text, ChatSpooferMsgBox.Text
+    if target ~= "" and msg ~= "" then
+        StarterGui:SetCore("ChatMakeSystemMessage", {Text = "[" .. target .. "]: " .. msg, Color = Theme.Text, Font = Enum.Font.SourceSansBold, FontSize = Enum.FontSize.Size18})
+    end
+end)
+
+InvisibleButton.MouseButton1Click:Connect(function()
+    InvisibleEnabled = not InvisibleEnabled; setToggleState(InvisibleButton, InvisibleEnabled)
+    if LocalPlayer.Character then
+        for _, p in ipairs(LocalPlayer.Character:GetDescendants()) do
+            if p:IsA("BasePart") or p:IsA("Decal") then p.Transparency = InvisibleEnabled and 1 or 0 end
+        end
+    end
+end)
+
+ServerHopButton.MouseButton1Click:Connect(function()
+    local success, result = pcall(function() return HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?limit=50")) end)
+    if success and result and result.data then
+        for _, s in ipairs(result.data) do
+            if s.playing < s.maxPlayers and s.id ~= game.JobId then TeleportService:TeleportToPlaceInstance(game.PlaceId, s.id, LocalPlayer); break end
+        end
+    end
+end)
+
+SpeedBox.FocusLost:Connect(function()
+    local val = tonumber(SpeedBox.Text) or 16; SpeedLabel.Text = "Скорость: " .. val
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then LocalPlayer.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = val end
+end)
+
+GravityBox.FocusLost:Connect(function()
+    local val = tonumber(GravityBox.Text) or 196.2; GravityLabel.Text = "Гравитация: " .. val; Workspace.Gravity = val
+end)
+
+local menuAnimating = false
+DragButton.MouseButton1Click:Connect(function()
+    if menuAnimating then return end
+    menuAnimating = true
+    
+    if not MainGui.Enabled then
+        MainGui.Enabled = true
+        MainFrame.Size = UDim2.new(0, 260, 0, 0)
+        updateTPPlayerList()
+        
+        local openTween = TweenService:Create(MainFrame, TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = UDim2.new(0, 260, 0, 320)})
+        openTween.Completed:Connect(function() menuAnimating = false end)
+        openTween:Play()
+    else
+        local closeTween = TweenService:Create(MainFrame, TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {Size = UDim2.new(0, 260, 0, 0)})
+        closeTween.Completed:Connect(function()
+            MainGui.Enabled = false
+            menuAnimating = false
+        end)
+        closeTween:Play()
+    end
+end)
+
+Players.PlayerAdded:Connect(updateTPPlayerList)
+Players.PlayerRemoving:Connect(updateTPPlayerList)
