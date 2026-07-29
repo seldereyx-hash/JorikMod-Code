@@ -1,0 +1,691 @@
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local TweenService = game:GetService("TweenService")
+local SoundService = game:GetService("SoundService")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+-- Цветовая палитра GUI
+local Colors = {
+    Background = Color3.fromRGB(20, 5, 35),
+    Header = Color3.fromRGB(40, 10, 65),
+    Button = Color3.fromRGB(60, 15, 90),
+    ButtonHover = Color3.fromRGB(85, 25, 125),
+    ButtonActive = Color3.fromRGB(130, 40, 200),
+    Text = Color3.fromRGB(230, 210, 255),
+    AvatarBg = Color3.fromRGB(30, 10, 45)
+}
+
+-- Глобальная конфигурация объекта
+local PenisConfig = {
+    Length = 4, -- Количество сегментов
+    Shape = "Cylinder", -- "Cylinder" или "Block"
+    MainColor = Color3.fromRGB(230, 160, 140),
+    TipColor = Color3.fromRGB(255, 120, 150),
+    Dripping = false -- Режим возбуждения (упругость)
+}
+
+-- Звуки
+local function playSound(soundId)
+    local sound = Instance.new("Sound")
+    sound.SoundId = "rbxassetid://" .. soundId
+    sound.Parent = SoundService
+    sound:Play()
+    sound.Ended:Connect(function()
+        sound:Destroy()
+    end)
+end
+
+-- Анимация кнопок
+local function addHoverAnimation(button, defaultColor)
+    button:SetAttribute("OriginalColor", defaultColor or Colors.Button)
+    button.BackgroundColor3 = defaultColor or Colors.Button
+    button.MouseEnter:Connect(function()
+        if button:GetAttribute("IsActive") ~= true then
+            TweenService:Create(button, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundColor3 = Colors.ButtonHover}):Play()
+        end
+    end)
+    button.MouseLeave:Connect(function()
+        if button:GetAttribute("IsActive") ~= true then
+            TweenService:Create(button, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundColor3 = button:GetAttribute("OriginalColor")}):Play()
+        end
+    end)
+end
+
+-- ПРОВЕРКА НА ПОВТОРНЫЙ ЗАПУСК
+if PlayerGui:FindFirstChild("SuperRingPartsGUI_V2") then
+    playSound("2865227271")
+    
+    local WarningGui = Instance.new("ScreenGui")
+    WarningGui.Name = "ScriptWarningGUI"
+    WarningGui.ResetOnSpawn = false
+    WarningGui.Parent = PlayerGui
+    
+    local Frame = Instance.new("CanvasGroup")
+    Frame.Size = UDim2.new(0, 260, 0, 130)
+    Frame.Position = UDim2.new(0.5, -130, 0.5, -65)
+    Frame.BackgroundColor3 = Colors.Background
+    Frame.BorderSizePixel = 0
+    Frame.GroupTransparency = 1
+    Frame.Parent = WarningGui
+    
+    local Corner = Instance.new("UICorner") Corner.CornerRadius = UDim.new(0, 12) Corner.Parent = Frame
+    local Stroke = Instance.new("UIStroke") Stroke.Color = Colors.Header Stroke.Thickness = 2 Stroke.Parent = Frame
+    
+    local TextLabel = Instance.new("TextLabel")
+    TextLabel.Size = UDim2.new(0.9, 0, 0.4, 0)
+    TextLabel.Position = UDim2.new(0.05, 0, 0.1, 0)
+    TextLabel.Text = "Скрипт уже активирован,\nактивировать еще раз?"
+    TextLabel.TextColor3 = Colors.Text
+    TextLabel.Font = Enum.Font.GothamBold
+    TextLabel.TextSize = 13
+    TextLabel.TextWrapped = true
+    TextLabel.BackgroundTransparency = 1
+    TextLabel.Parent = Frame
+    
+    local YesButton = Instance.new("TextButton")
+    YesButton.Size = UDim2.new(0.4, 0, 0, 30)
+    YesButton.Position = UDim2.new(0.08, 0, 0.6, 0)
+    YesButton.Text = "Да"
+    YesButton.TextColor3 = Colors.Text
+    YesButton.Font = Enum.Font.GothamBold
+    YesButton.TextSize = 13
+    YesButton.Parent = Frame
+    local YC = Instance.new("UICorner") YC.CornerRadius = UDim.new(0, 6) YC.Parent = YesButton
+    addHoverAnimation(YesButton)
+    
+    local NoButton = Instance.new("TextButton")
+    NoButton.Size = UDim2.new(0.4, 0, 0, 30)
+    NoButton.Position = UDim2.new(0.52, 0, 0.6, 0)
+    NoButton.Text = "Нет"
+    NoButton.TextColor3 = Colors.Text
+    NoButton.Font = Enum.Font.GothamBold
+    NoButton.TextSize = 13
+    NoButton.Parent = Frame
+    local NC = Instance.new("UICorner") NC.CornerRadius = UDim.new(0, 6) NC.Parent = NoButton
+    addHoverAnimation(NoButton)
+    
+    TweenService:Create(Frame, TweenInfo.new(0.3), {GroupTransparency = 0}):Play()
+    
+    local choice = nil
+    YesButton.MouseButton1Click:Connect(function() choice = "Yes" end)
+    NoButton.MouseButton1Click:Connect(function() choice = "No" end)
+    
+    while choice == nil do task.wait() end
+    playSound("12221967")
+    
+    TweenService:Create(Frame, TweenInfo.new(0.2), {GroupTransparency = 1}):Play()
+    task.wait(0.2)
+    WarningGui:Destroy()
+    
+    if choice == "No" then
+        return 
+    end
+end
+
+-- ОСНОВНОЙ КОД МЕНЮ
+playSound("2865227271")
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "SuperRingPartsGUI_V2"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = PlayerGui
+
+local MainFrame = Instance.new("CanvasGroup")
+MainFrame.Size = UDim2.new(0, 220, 0, 410) -- Добавили высоту под кнопку мода
+MainFrame.Position = UDim2.new(0.5, -110, 0.5, -205)
+MainFrame.BackgroundColor3 = Colors.Background
+MainFrame.BorderSizePixel = 0
+MainFrame.Parent = ScreenGui
+
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 12)
+UICorner.Parent = MainFrame
+
+MainFrame.Size = UDim2.new(0, 0, 0, 0)
+MainFrame.GroupTransparency = 1
+TweenService:Create(MainFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(0, 220, 0, 410)}):Play()
+TweenService:Create(MainFrame, TweenInfo.new(0.3), {GroupTransparency = 0}):Play()
+
+local HeaderFrame = Instance.new("Frame")
+HeaderFrame.Size = UDim2.new(1, 0, 0, 32)
+HeaderFrame.BackgroundColor3 = Colors.Header
+HeaderFrame.BorderSizePixel = 0
+HeaderFrame.ZIndex = 10
+HeaderFrame.Parent = MainFrame
+
+local TitleCorner = Instance.new("UICorner")
+TitleCorner.CornerRadius = UDim.new(0, 12)
+TitleCorner.Parent = HeaderFrame
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, -40, 1, 0)
+Title.Position = UDim2.new(0, 10, 0, 0)
+Title.Text = "Menu | ITZ_BECON061"
+Title.TextColor3 = Colors.Text
+Title.BackgroundTransparency = 1
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 12
+Title.ZIndex = 11
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Parent = HeaderFrame
+
+local ContentFrame = Instance.new("Frame")
+ContentFrame.Size = UDim2.new(1, 0, 1, -32)
+ContentFrame.Position = UDim2.new(0, 0, 0, 32)
+ContentFrame.BackgroundTransparency = 1
+ContentFrame.Parent = MainFrame
+
+local function createAchievementNotify(customText)
+    local AchievementGui = Instance.new("ScreenGui")
+    AchievementGui.Name = "AchievementGui"
+    AchievementGui.Parent = PlayerGui
+    
+    local Box = Instance.new("Frame")
+    Box.Size = UDim2.new(0, 260, 0, 65)
+    Box.Position = UDim2.new(0.5, -130, 0, -80)
+    Box.BackgroundColor3 = Colors.Background
+    Box.BorderSizePixel = 0
+    Box.Parent = AchievementGui
+    
+    local BCorner = Instance.new("UICorner") BCorner.CornerRadius = UDim.new(0, 10) BCorner.Parent = Box
+    local Stroke = Instance.new("UIStroke") Stroke.Color = Colors.Header Stroke.Thickness = 2 Stroke.Parent = Box
+    
+    local AvatarBg = Instance.new("Frame")
+    AvatarBg.Size = UDim2.new(0, 45, 0, 45)
+    AvatarBg.Position = UDim2.new(0, 10, 0, 10)
+    AvatarBg.BackgroundColor3 = Colors.AvatarBg
+    AvatarBg.BorderSizePixel = 0
+    AvatarBg.Parent = Box
+    local ABgCorner = Instance.new("UICorner") ABgCorner.CornerRadius = UDim.new(1, 0) ABgCorner.Parent = AvatarBg
+    
+    local Avatar = Instance.new("ImageLabel")
+    Avatar.Size = UDim2.new(1, 0, 1, 0)
+    Avatar.BackgroundTransparency = 1
+    Avatar.Parent = AvatarBg
+    local ACorner = Instance.new("UICorner") ACorner.CornerRadius = UDim.new(1, 0) ACorner.Parent = Avatar
+    
+    task.spawn(function()
+        pcall(function()
+            local id = Players:GetUserIdFromNameAsync("ITZ_BECON061")
+            Avatar.Image = Players:GetUserThumbnailAsync(id, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100)
+        end)
+    end)
+    
+    local TitleLabel = Instance.new("TextLabel")
+    TitleLabel.Size = UDim2.new(1, -70, 0, 20)
+    TitleLabel.Position = UDim2.new(0, 65, 0, 12)
+    TitleLabel.Text = "Menu Notification 🏆"
+    TitleLabel.TextColor3 = Color3.fromRGB(180, 130, 255)
+    TitleLabel.Font = Enum.Font.GothamBold
+    TitleLabel.TextSize = 12
+    TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    TitleLabel.BackgroundTransparency = 1
+    TitleLabel.Parent = Box
+    
+    local TextLabel = Instance.new("TextLabel")
+    TextLabel.Size = UDim2.new(1, -70, 0, 20)
+    TextLabel.Position = UDim2.new(0, 65, 0, 28)
+    TextLabel.Text = customText or ("Enjoy using, " .. LocalPlayer.Name .. "!")
+    TextLabel.TextColor3 = Colors.Text
+    TextLabel.Font = Enum.Font.GothamSemibold
+    TextLabel.TextSize = 11
+    TextLabel.TextXAlignment = Enum.TextXAlignment.Left
+    TextLabel.BackgroundTransparency = 1
+    TextLabel.Parent = Box
+    
+    TweenService:Create(Box, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position = UDim2.new(0.5, -130, 0, 25)}):Play()
+    
+    task.delay(2.5, function()
+        if Box and Box.Parent then
+            TweenService:Create(Box, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Position = UDim2.new(0.5, -130, 0, -80)}):Play()
+            task.wait(0.4)
+            AchievementGui:Destroy()
+        end
+    end)
+end
+
+-- ФУНКЦИЯ СОЗДАНИЯ ФИЗИЧЕСКОГО ОБЪЕКТА
+local function spawnPhysicsPenis()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("LowerTorso") or char:FindFirstChild("Torso")
+    if not root then return end
+
+    local old = char:FindFirstChild("PhysicsPenis")
+    if old then old:Destroy() end
+
+    local model = Instance.new("Model")
+    model.Name = "PhysicsPenis"
+    model.Parent = char
+
+    local diameter = 0.45
+    local segmentLength = 0.65
+
+    -- Настройка NoCollisionConstraints, чтобы хитбоксы не толкали самого игрока
+    local function ignoreCharacterCollisions(part)
+        for _, child in ipairs(char:GetChildren()) do
+            if child:IsA("BasePart") then
+                local ncc = Instance.new("NoCollisionConstraint")
+                ncc.Part0 = part
+                ncc.Part1 = child
+                ncc.Parent = part
+            end
+        end
+    end
+
+    -- Вспомогательная функция сборки сегментов (Смотрит строго вперед по оси Z)
+    local function createSegment(name, positionOffset, parentAttachment)
+        local part = Instance.new("Part")
+        part.Name = name
+        part.Color = PenisConfig.MainColor
+        part.Material = Enum.Material.SmoothPlastic
+        
+        if PenisConfig.Shape == "Cylinder" then
+            part.Shape = Enum.PartType.Cylinder
+            part.Size = Vector3.new(segmentLength, diameter, diameter)
+        else
+            part.Shape = Enum.PartType.Block
+            part.Size = Vector3.new(diameter, diameter, segmentLength)
+        end
+        
+        -- Включаем хитбоксы
+        part.CanCollide = true
+        part.Massless = true
+        
+        -- Выравниваем CFrame: направляем строго по центру вперед
+        if PenisConfig.Shape == "Cylinder" then
+            part.CFrame = root.CFrame * CFrame.new(positionOffset) * CFrame.Angles(0, math.rad(90), 0)
+        else
+            part.CFrame = root.CFrame * CFrame.new(positionOffset)
+        end
+        
+        ignoreCharacterCollisions(part)
+        part.Parent = model
+
+        local attSelf = Instance.new("Attachment")
+        if PenisConfig.Shape == "Cylinder" then
+            attSelf.Position = Vector3.new(-segmentLength/2, 0, 0)
+        else
+            attSelf.Position = Vector3.new(0, 0, segmentLength/2)
+        end
+        attSelf.Parent = part
+
+        local bsc = Instance.new("BallSocketConstraint")
+        bsc.Attachment0 = parentAttachment
+        bsc.Attachment1 = attSelf
+        bsc.LimitsEnabled = true
+        -- В режиме Dripping уменьшаем углы свободного хода, чтобы член стоял жестче
+        bsc.UpperAngle = PenisConfig.Dripping and 5 or 35
+        bsc.Parent = part
+
+        local spring = Instance.new("SpringConstraint")
+        spring.Attachment0 = parentAttachment
+        spring.Attachment1 = attSelf
+        -- В режиме Dripping задираем жесткость до максимума для эффекта эрекции
+        spring.Stiffness = PenisConfig.Dripping and 4500 or 250
+        spring.Damping = PenisConfig.Dripping and 40 or 12
+        spring.FreeLength = 0
+        spring.Parent = part
+
+        local attNext = Instance.new("Attachment")
+        if PenisConfig.Shape == "Cylinder" then
+            attNext.Position = Vector3.new(segmentLength/2, 0, 0)
+        else
+            attNext.Position = Vector3.new(0, 0, -segmentLength/2)
+        end
+        attNext.Parent = part
+
+        return part, attNext
+    end
+
+    -- Создание основы (яиц)
+    local leftBall = Instance.new("Part")
+    leftBall.Name = "LeftBall"
+    leftBall.Shape = Enum.PartType.Ball
+    leftBall.Size = Vector3.new(0.65, 0.65, 0.65)
+    leftBall.Color = PenisConfig.MainColor
+    leftBall.CanCollide = true
+    leftBall.Massless = true
+    leftBall.CFrame = root.CFrame * CFrame.new(-0.25, -0.6, -0.4)
+    ignoreCharacterCollisions(leftBall)
+    leftBall.Parent = model
+    local w1 = Instance.new("WeldConstraint", leftBall) w1.Part0 = root w1.Part1 = leftBall
+
+    local rightBall = Instance.new("Part")
+    rightBall.Name = "RightBall"
+    rightBall.Shape = Enum.PartType.Ball
+    rightBall.Size = Vector3.new(0.65, 0.65, 0.65)
+    rightBall.Color = PenisConfig.MainColor
+    rightBall.CanCollide = true
+    rightBall.Massless = true
+    rightBall.CFrame = root.CFrame * CFrame.new(0.25, -0.6, -0.4)
+    ignoreCharacterCollisions(rightBall)
+    rightBall.Parent = model
+    local w2 = Instance.new("WeldConstraint", rightBall) w2.Part0 = root w2.Part1 = rightBall
+
+    -- Начальный корневой аттачмент строго по центру спереди
+    local currentAttachment = Instance.new("Attachment")
+    currentAttachment.Position = Vector3.new(0, -0.45, -0.55)
+    currentAttachment.Parent = root
+
+    -- Строим цепочку
+    local lastPart = nil
+    for i = 1, PenisConfig.Length do
+        local offsetZ = -0.55 - (i * (segmentLength * 0.9))
+        local part, nextAtt = createSegment("Segment_" .. i, Vector3.new(0, -0.45, offsetZ), currentAttachment)
+        lastPart = part
+        currentAttachment = nextAtt
+    end
+
+    -- Головка приварена жестко
+    if lastPart then
+        local tip = Instance.new("Part")
+        tip.Name = "Tip"
+        tip.Shape = Enum.PartType.Ball
+        tip.Size = Vector3.new(diameter * 1.2, diameter * 1.2, diameter * 1.2)
+        tip.Color = PenisConfig.TipColor
+        tip.CanCollide = true
+        tip.Massless = true
+        
+        if PenisConfig.Shape == "Cylinder" then
+            tip.CFrame = lastPart.CFrame * CFrame.new(segmentLength / 2 + 0.1, 0, 0)
+        else
+            tip.CFrame = lastPart.CFrame * CFrame.new(0, 0, -segmentLength / 2 - 0.1)
+        end
+        
+        ignoreCharacterCollisions(tip)
+        tip.Parent = model
+
+        local weld = Instance.new("WeldConstraint")
+        weld.Part0 = lastPart
+        weld.Part1 = tip
+        weld.Parent = tip
+    end
+end
+
+-- ФУНКЦИЯ УДАЛЕНИЯ ВСЕХ ОБЪЕКТОВ
+local function removeAllPenises()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player.Character then
+            local p = player.Character:FindFirstChild("PhysicsPenis")
+            if p then p:Destroy() end
+        end
+    end
+end
+
+-- КНОПКА: ADD PENIS
+local AddPenisButton = Instance.new("TextButton")
+AddPenisButton.Size = UDim2.new(0.9, 0, 0, 35)
+AddPenisButton.Position = UDim2.new(0.05, 0, 0.02, 0)
+AddPenisButton.Text = "Add Penis 🍆"
+AddPenisButton.TextColor3 = Colors.Text
+AddPenisButton.Font = Enum.Font.GothamBold
+AddPenisButton.TextSize = 14
+AddPenisButton.Parent = ContentFrame
+addHoverAnimation(AddPenisButton, Colors.Button)
+
+local AddCorner = Instance.new("UICorner") AddCorner.CornerRadius = UDim.new(0, 8) AddCorner.Parent = AddPenisButton
+
+AddPenisButton.MouseButton1Click:Connect(function()
+    spawnPhysicsPenis()
+    playSound("12221967")
+    createAchievementNotify("Успешно добавлено!")
+end)
+
+-- КНОПКА: REMOVE ALL PENISES
+local RemovePenisButton = Instance.new("TextButton")
+RemovePenisButton.Size = UDim2.new(0.9, 0, 0, 30)
+RemovePenisButton.Position = UDim2.new(0.05, 0, 0.13, 0)
+RemovePenisButton.Text = "Remove all penises ❌"
+RemovePenisButton.TextColor3 = Colors.Text
+RemovePenisButton.Font = Enum.Font.GothamBold
+RemovePenisButton.TextSize = 12
+RemovePenisButton.Parent = ContentFrame
+addHoverAnimation(RemovePenisButton, Color3.fromRGB(100, 25, 25))
+
+local RemoveCorner = Instance.new("UICorner") RemoveCorner.CornerRadius = UDim.new(0, 8) RemoveCorner.Parent = RemovePenisButton
+
+RemovePenisButton.MouseButton1Click:Connect(function()
+    removeAllPenises()
+    playSound("12221967")
+    createAchievementNotify("Все объекты полностью удалены!")
+end)
+
+-- КОНТЕЙНЕР НАСТРОЕК (СКРОЛЛ-ЗОНА)
+local ControlsScroll = Instance.new("Frame")
+ControlsScroll.Size = UDim2.new(1, 0, 0.65, 0)
+ControlsScroll.Position = UDim2.new(0, 0, 0.24, 0)
+ControlsScroll.BackgroundTransparency = 1
+ControlsScroll.Parent = ContentFrame
+
+local function createControl(labelText, defaultValue, min, max, offset, callback)
+    local Container = Instance.new("Frame")
+    Container.Size = UDim2.new(0.9, 0, 0, 45)
+    Container.Position = UDim2.new(0.05, 0, 0, offset)
+    Container.BackgroundTransparency = 1
+    Container.Parent = ControlsScroll
+
+    local Display = Instance.new("TextLabel")
+    Display.Size = UDim2.new(1, 0, 0, 16)
+    Display.Text = labelText .. ": " .. tostring(defaultValue)
+    Display.BackgroundTransparency = 1
+    Display.TextColor3 = Colors.Text
+    Display.Font = Enum.Font.GothamSemibold
+    Display.TextSize = 11
+    Display.Parent = Container
+
+    local DecreaseButton = Instance.new("TextButton")
+    DecreaseButton.Size = UDim2.new(0.18, 0, 0, 20)
+    DecreaseButton.Position = UDim2.new(0, 0, 0.45, 0)
+    DecreaseButton.Text = "-"
+    DecreaseButton.TextColor3 = Colors.Text
+    DecreaseButton.Font = Enum.Font.GothamBold
+    DecreaseButton.TextSize = 12
+    DecreaseButton.Parent = Container
+    local DC = Instance.new("UICorner") DC.CornerRadius = UDim.new(0, 5) DC.Parent = DecreaseButton
+    addHoverAnimation(DecreaseButton)
+
+    local IncreaseButton = Instance.new("TextButton")
+    IncreaseButton.Size = UDim2.new(0.18, 0, 0, 20)
+    IncreaseButton.Position = UDim2.new(0.82, 0, 0.45, 0)
+    IncreaseButton.Text = "+"
+    IncreaseButton.TextColor3 = Colors.Text
+    IncreaseButton.Font = Enum.Font.GothamBold
+    IncreaseButton.TextSize = 12
+    IncreaseButton.Parent = Container
+    local IC = Instance.new("UICorner") IC.CornerRadius = UDim.new(0, 5) IC.Parent = IncreaseButton
+    addHoverAnimation(IncreaseButton)
+
+    local TextBox = Instance.new("TextBox")
+    TextBox.Size = UDim2.new(0.55, 0, 0, 20)
+    TextBox.Position = UDim2.new(0.22, 0, 0.45, 0)
+    TextBox.PlaceholderText = "Введи..."
+    TextBox.BackgroundColor3 = Colors.Header
+    TextBox.TextColor3 = Colors.Text
+    TextBox.Font = Enum.Font.Gotham
+    TextBox.TextSize = 10
+    TextBox.Parent = Container
+    local TC = Instance.new("UICorner") TC.CornerRadius = UDim.new(0, 5) TC.Parent = TextBox
+
+    local currentVal = type(defaultValue) == "number" and defaultValue or 0
+
+    local function updateValue(newValue)
+        if type(defaultValue) == "number" then
+            if min and max then
+                newValue = math.clamp(newValue, min, max)
+            end
+            currentVal = newValue
+            Display.Text = labelText .. ": " .. newValue
+            callback(newValue)
+        else
+            Display.Text = labelText .. ": Установлен"
+            callback(newValue)
+        end
+    end
+
+    DecreaseButton.MouseButton1Click:Connect(function()
+        if type(defaultValue) == "number" then updateValue(currentVal - 1) end
+        playSound("12221967")
+    end)
+
+    IncreaseButton.MouseButton1Click:Connect(function()
+        if type(defaultValue) == "number" then updateValue(currentVal + 1) end
+        playSound("12221967")
+    end)
+
+    TextBox.FocusLost:Connect(function(enterPressed)
+        if enterPressed then
+            if type(defaultValue) == "number" then
+                local newValue = tonumber(TextBox.Text)
+                if newValue then updateValue(newValue) end
+            else
+                local r, g, b = TextBox.Text:match("(%d+),%s*(%d+),%s*(%d+)")
+                if r and g and b then
+                    updateValue(Color3.fromRGB(tonumber(r), tonumber(g), tonumber(b)))
+                end
+            end
+            TextBox.Text = ""
+            playSound("12221967")
+        end
+    end)
+end
+
+-- НАСТРОЙКИ В СКРОЛЛ ПАНЕЛИ (Лимиты min/max убраны за счёт передачи nil)
+createControl("Длина (без лимита)", PenisConfig.Length, nil, nil, 0, function(v) PenisConfig.Length = math.max(1, v) end)
+
+-- Переключатель формы (Цилиндр / Блок)
+local ShapeContainer = Instance.new("Frame")
+ShapeContainer.Size = UDim2.new(0.9, 0, 0, 45)
+ShapeContainer.Position = UDim2.new(0.05, 0, 0, 48)
+ShapeContainer.BackgroundTransparency = 1
+ShapeContainer.Parent = ControlsScroll
+
+local ShapeLabel = Instance.new("TextLabel")
+ShapeLabel.Size = UDim2.new(1, 0, 0, 16)
+ShapeLabel.Text = "Форма звеньев"
+ShapeLabel.BackgroundTransparency = 1
+ShapeLabel.TextColor3 = Colors.Text
+ShapeLabel.Font = Enum.Font.GothamSemibold
+ShapeLabel.TextSize = 11
+ShapeLabel.Parent = ShapeContainer
+
+local ShapeToggleBtn = Instance.new("TextButton")
+ShapeToggleBtn.Size = UDim2.new(1, 0, 0, 22)
+ShapeToggleBtn.Position = UDim2.new(0, 0, 0.45, 0)
+ShapeToggleBtn.Text = "Текущая: Cylinder"
+ShapeToggleBtn.TextColor3 = Colors.Text
+ShapeToggleBtn.Font = Enum.Font.GothamBold
+ShapeToggleBtn.TextSize = 11
+ShapeToggleBtn.Parent = ShapeContainer
+local STC = Instance.new("UICorner", ShapeToggleBtn) STC.CornerRadius = UDim.new(0, 5)
+addHoverAnimation(ShapeToggleBtn)
+
+ShapeToggleBtn.MouseButton1Click:Connect(function()
+    if PenisConfig.Shape == "Cylinder" then PenisConfig.Shape = "Block" else PenisConfig.Shape = "Cylinder" end
+    ShapeToggleBtn.Text = "Текущая: " .. PenisConfig.Shape
+    playSound("12221967")
+end)
+
+-- Переключатель Dripping режима (Упругость/Эрекция)
+local DripContainer = Instance.new("Frame")
+DripContainer.Size = UDim2.new(0.9, 0, 0, 45)
+DripContainer.Position = UDim2.new(0.05, 0, 0, 96)
+DripContainer.BackgroundTransparency = 1
+DripContainer.Parent = ControlsScroll
+
+local DripLabel = Instance.new("TextLabel")
+DripLabel.Size = UDim2.new(1, 0, 0, 16)
+DripLabel.Text = "Режим Dripping (Упругость)"
+DripLabel.BackgroundTransparency = 1
+DripLabel.TextColor3 = Colors.Text
+DripLabel.Font = Enum.Font.GothamSemibold
+DripLabel.TextSize = 11
+DripLabel.Parent = DripContainer
+
+local DripToggleBtn = Instance.new("TextButton")
+DripToggleBtn.Size = UDim2.new(1, 0, 0, 22)
+DripToggleBtn.Position = UDim2.new(0, 0, 0.45, 0)
+DripToggleBtn.Text = "Dripping: OFF"
+DripToggleBtn.TextColor3 = Colors.Text
+DripToggleBtn.Font = Enum.Font.GothamBold
+DripToggleBtn.TextSize = 11
+DripToggleBtn.Parent = DripContainer
+local DTC = Instance.new("UICorner", DripToggleBtn) DTC.CornerRadius = UDim.new(0, 5)
+addHoverAnimation(DripToggleBtn)
+
+DripToggleBtn.MouseButton1Click:Connect(function()
+    PenisConfig.Dripping = not PenisConfig.Dripping
+    DripToggleBtn.Text = PenisConfig.Dripping and "Dripping: ON ⚡" or "Dripping: OFF"
+    DripToggleBtn:SetAttribute("IsActive", PenisConfig.Dripping)
+    DripToggleBtn.BackgroundColor3 = PenisConfig.Dripping and Colors.ButtonActive or Colors.Button
+    playSound("12221967")
+    
+    -- Пересоздаем объект, если он уже заспавнен, чтобы применить физику упругости сразу
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("PhysicsPenis") then
+        spawnPhysicsPenis()
+    end
+end)
+
+createControl("Цвет тела (R,G,B)", "230,160,140", nil, nil, 144, function(v) PenisConfig.MainColor = v end)
+createControl("Цвет головки (R,G,B)", "255,120,150", nil, nil, 192, function(v) PenisConfig.TipColor = v end)
+
+-- КНОПКА СВЕРНУТЬ МЕНЮ
+local MinimizeButton = Instance.new("TextButton")
+MinimizeButton.Size = UDim2.new(0, 22, 0, 22)
+MinimizeButton.Position = UDim2.new(1, -27, 0, 5)
+MinimizeButton.Text = "-"
+MinimizeButton.BackgroundColor3 = Colors.Button
+MinimizeButton.TextColor3 = Colors.Text
+MinimizeButton.Font = Enum.Font.GothamBold
+MinimizeButton.TextSize = 13
+MinimizeButton.ZIndex = 12
+MinimizeButton.Parent = HeaderFrame
+local MinimizeCorner = Instance.new("UICorner") MinimizeCorner.CornerRadius = UDim.new(0, 11) MinimizeCorner.Parent = MinimizeButton
+addHoverAnimation(MinimizeButton)
+
+local minimized = false
+MinimizeButton.MouseButton1Click:Connect(function()
+    minimized = not minimized
+    if minimized then
+        TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(0, 220, 0, 32)}):Play()
+        TweenService:Create(ContentFrame, TweenInfo.new(0.2), {Position = UDim2.new(0, 0, 0, 10)}):Play()
+        TweenService:Create(MainFrame, TweenInfo.new(0.25), {GroupTransparency = 0.4}):Play()
+        ContentFrame.Visible = false
+        MinimizeButton.Text = "+"
+    else
+        ContentFrame.Visible = true
+        TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(0, 220, 0, 410)}):Play()
+        TweenService:Create(ContentFrame, TweenInfo.new(0.2), {Position = UDim2.new(0, 0, 0, 32)}):Play()
+        TweenService:Create(MainFrame, TweenInfo.new(0.25), {GroupTransparency = 0}):Play()
+        MinimizeButton.Text = "-"
+    end
+    playSound("12221967")
+end)
+
+-- ДРАГ СИСТЕМА (ПЕРЕМЕЩЕНИЕ ОКНА)
+local dragging, dragInput, dragStart, startPos
+HeaderFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
+        end)
+    end
+end)
+HeaderFrame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+createAchievementNotify("Скрипт успешно активирован!")
