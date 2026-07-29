@@ -55,6 +55,7 @@ local flyV2Speed = 50
 local aimbotFOV = 120
 local aimbotSmoothness = 0.25
 local espObjects = {}
+local espConnections = {}
 
 local ringPartsConfig = {
     radius = 50,
@@ -793,18 +794,42 @@ AimbotButton.MouseButton1Click:Connect(function()
     end
 end)
 
+local function setupESP(player)
+    if player == LocalPlayer then return end
+    
+    local function applyESP()
+        if not ESPEnabled then return end
+        if player.Character then
+            if espObjects[player] then espObjects[player]:Destroy() end
+            local hl = Instance.new("Highlight", player.Character)
+            hl.FillColor = Theme.Accent
+            espObjects[player] = hl
+        end
+    end
+
+    applyESP()
+    if espConnections[player] then espConnections[player]:Disconnect() end
+    espConnections[player] = player.CharacterAdded:Connect(applyESP)
+end
+
 ESPButton.MouseButton1Click:Connect(function()
     ESPEnabled = not ESPEnabled; setToggleState(ESPButton, ESPEnabled)
     if ESPEnabled then
         for _, p in ipairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer and p.Character then
-                local hl = Instance.new("Highlight", p.Character)
-                hl.FillColor = Theme.Accent; espObjects[p] = hl
-            end
+            setupESP(p)
         end
     else
         for _, hl in pairs(espObjects) do if hl then hl:Destroy() end end; table.clear(espObjects)
     end
+end)
+
+Players.PlayerAdded:Connect(function(p)
+    if ESPEnabled then setupESP(p) end
+end)
+
+Players.PlayerRemoving:Connect(function(p)
+    if espConnections[p] then espConnections[p]:Disconnect(); espConnections[p] = nil end
+    if espObjects[p] then espObjects[p]:Destroy(); espObjects[p] = nil end
 end)
 
 ESPV2Button.MouseButton1Click:Connect(function()
