@@ -1,0 +1,673 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local SoundService = game:GetService("SoundService")
+local StarterGui = game:GetService("StarterGui")
+local HttpService = game:GetService("HttpService")
+local TweenService = game:GetService("TweenService")
+local Lighting = game:GetService("Lighting")
+local LocalPlayer = Players.LocalPlayer
+
+-- Sound Effects
+local function playSound(soundId)
+    local sound = Instance.new("Sound")
+    sound.SoundId = "rbxassetid://" .. soundId
+    sound.Parent = SoundService
+    sound:Play()
+    sound.Ended:Connect(function()
+        sound:Destroy()
+    end)
+end
+
+playSound("2865227271")
+
+-- Цветовая палитра
+local Colors = {
+    Background = Color3.fromRGB(20, 5, 35),
+    Header = Color3.fromRGB(40, 10, 65),
+    Button = Color3.fromRGB(60, 15, 90),
+    ButtonHover = Color3.fromRGB(85, 25, 125),
+    ButtonActive = Color3.fromRGB(130, 40, 200),
+    Text = Color3.fromRGB(230, 210, 255),
+    TornadoOn = Color3.fromRGB(100, 30, 150),
+    TornadoOff = Color3.fromRGB(40, 10, 65),
+    AvatarBg = Color3.fromRGB(30, 10, 45)
+}
+
+-- Функция для добавления анимации при наведении
+local function addHoverAnimation(button, defaultColor)
+    button:SetAttribute("OriginalColor", defaultColor or Colors.Button)
+    button.BackgroundColor3 = defaultColor or Colors.Button
+    button.MouseEnter:Connect(function()
+        if button:GetAttribute("IsActive") ~= true then
+            TweenService:Create(button, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundColor3 = Colors.ButtonHover}):Play()
+        end
+    end)
+    button.MouseLeave:Connect(function()
+        if button:GetAttribute("IsActive") ~= true then
+            TweenService:Create(button, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundColor3 = button:GetAttribute("OriginalColor")}):Play()
+        end
+    end)
+end
+
+-- GUI Creation
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "SuperRingPartsGUI_V2"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+local MainFrame = Instance.new("CanvasGroup")
+MainFrame.Size = UDim2.new(0, 220, 0, 340)
+MainFrame.Position = UDim2.new(0.5, -110, 0.5, -170)
+MainFrame.BackgroundColor3 = Colors.Background
+MainFrame.BorderSizePixel = 0
+MainFrame.Parent = ScreenGui
+
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 12)
+UICorner.Parent = MainFrame
+
+-- Анимация появления GUI
+MainFrame.Size = UDim2.new(0, 0, 0, 0)
+MainFrame.GroupTransparency = 1
+TweenService:Create(MainFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(0, 220, 0, 340)}):Play()
+TweenService:Create(MainFrame, TweenInfo.new(0.3), {GroupTransparency = 0}):Play()
+
+-- Верхняя панель
+local HeaderFrame = Instance.new("Frame")
+HeaderFrame.Size = UDim2.new(1, 0, 0, 32)
+HeaderFrame.BackgroundColor3 = Colors.Header
+HeaderFrame.BorderSizePixel = 0
+HeaderFrame.ZIndex = 10
+HeaderFrame.Parent = MainFrame
+
+local TitleCorner = Instance.new("UICorner")
+TitleCorner.CornerRadius = UDim.new(0, 12)
+TitleCorner.Parent = HeaderFrame
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, -40, 1, 0)
+Title.Position = UDim2.new(0, 10, 0, 0)
+Title.Text = "Ring Parts V2 | ITZ_BECON061"
+Title.TextColor3 = Colors.Text
+Title.BackgroundTransparency = 1
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 12
+Title.ZIndex = 11
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Parent = HeaderFrame
+
+local ContentFrame = Instance.new("Frame")
+ContentFrame.Size = UDim2.new(1, 0, 1, -32)
+ContentFrame.Position = UDim2.new(0, 0, 0, 32)
+ContentFrame.BackgroundTransparency = 1
+ContentFrame.Parent = MainFrame
+
+local ToggleButton = Instance.new("TextButton")
+ToggleButton.Size = UDim2.new(0.9, 0, 0, 28)
+ToggleButton.Position = UDim2.new(0.05, 0, 0.03, 0)
+ToggleButton.Text = "Tornado Off"
+ToggleButton.TextColor3 = Colors.Text
+ToggleButton.Font = Enum.Font.GothamBold
+ToggleButton.TextSize = 13
+ToggleButton.Parent = ContentFrame
+addHoverAnimation(ToggleButton, Colors.TornadoOff)
+
+local ToggleCorner = Instance.new("UICorner")
+ToggleCorner.CornerRadius = UDim.new(0, 8)
+ToggleCorner.Parent = ToggleButton
+
+-- Configuration table
+local config = {
+    radius = 50,
+    height = 100,
+    rotationSpeed = 10,
+    attractionStrength = 1000,
+}
+
+-- Scrolling Frame для ползунков
+local ControlsScroll = Instance.new("ScrollingFrame")
+ControlsScroll.Size = UDim2.new(1, 0, 0.52, 0)
+ControlsScroll.Position = UDim2.new(0, 0, 0.14, 0)
+ControlsScroll.BackgroundTransparency = 1
+ControlsScroll.ScrollBarThickness = 2
+ControlsScroll.CanvasSize = UDim2.new(0, 0, 0, 190)
+ControlsScroll.Parent = ContentFrame
+
+local UIListLayout = Instance.new("UIListLayout")
+UIListLayout.Parent = ControlsScroll
+UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+UIListLayout.Padding = UDim.new(0, 5)
+
+local Spacer = Instance.new("Frame")
+Spacer.Size = UDim2.new(1, 0, 0, 2)
+Spacer.BackgroundTransparency = 1
+Spacer.Parent = ControlsScroll
+
+local function createControl(name, labelText, defaultValue, callback)
+    local Container = Instance.new("Frame")
+    Container.Size = UDim2.new(0.9, 0, 0, 40)
+    Container.BackgroundTransparency = 1
+    Container.Parent = ControlsScroll
+
+    local Display = Instance.new("TextLabel")
+    Display.Size = UDim2.new(1, 0, 0, 16)
+    Display.Text = labelText .. ": " .. defaultValue
+    Display.BackgroundTransparency = 1
+    Display.TextColor3 = Colors.Text
+    Display.Font = Enum.Font.GothamSemibold
+    Display.TextSize = 11
+    Display.Parent = Container
+
+    local DecreaseButton = Instance.new("TextButton")
+    DecreaseButton.Size = UDim2.new(0.18, 0, 0, 18)
+    DecreaseButton.Position = UDim2.new(0, 0, 0.45, 0)
+    DecreaseButton.Text = "-"
+    DecreaseButton.TextColor3 = Colors.Text
+    DecreaseButton.Font = Enum.Font.GothamBold
+    DecreaseButton.TextSize = 12
+    DecreaseButton.Parent = Container
+    local DC = Instance.new("UICorner") DC.CornerRadius = UDim.new(0, 5) DC.Parent = DecreaseButton
+    addHoverAnimation(DecreaseButton)
+
+    local IncreaseButton = Instance.new("TextButton")
+    IncreaseButton.Size = UDim2.new(0.18, 0, 0, 18)
+    IncreaseButton.Position = UDim2.new(0.82, 0, 0.45, 0)
+    IncreaseButton.Text = "+"
+    IncreaseButton.TextColor3 = Colors.Text
+    IncreaseButton.Font = Enum.Font.GothamBold
+    IncreaseButton.TextSize = 12
+    IncreaseButton.Parent = Container
+    local IC = Instance.new("UICorner") IC.CornerRadius = UDim.new(0, 5) IC.Parent = IncreaseButton
+    addHoverAnimation(IncreaseButton)
+
+    local TextBox = Instance.new("TextBox")
+    TextBox.Size = UDim2.new(0.55, 0, 0, 18)
+    TextBox.Position = UDim2.new(0.22, 0, 0.45, 0)
+    TextBox.PlaceholderText = "..."
+    TextBox.BackgroundColor3 = Colors.Header
+    TextBox.TextColor3 = Colors.Text
+    TextBox.Font = Enum.Font.Gotham
+    TextBox.TextSize = 11
+    TextBox.Parent = Container
+    local TC = Instance.new("UICorner") TC.CornerRadius = UDim.new(0, 5) TC.Parent = TextBox
+
+    DecreaseButton.MouseButton1Click:Connect(function()
+        local value = tonumber(Display.Text:match("%d+")) or 0
+        value = math.max(0, value - 10)
+        Display.Text = labelText .. ": " .. value
+        callback(value)
+        playSound("12221967")
+    end)
+
+    IncreaseButton.MouseButton1Click:Connect(function()
+        local value = tonumber(Display.Text:match("%d+")) or 0
+        value = math.min(10000, value + 10)
+        Display.Text = labelText .. ": " .. value
+        callback(value)
+        playSound("12221967")
+    end)
+
+    TextBox.FocusLost:Connect(function(enterPressed)
+        if enterPressed then
+            local newValue = tonumber(TextBox.Text)
+            if newValue then
+                newValue = math.clamp(newValue, 0, 10000)
+                Display.Text = labelText .. ": " .. newValue
+                callback(newValue)
+                playSound("12221967")
+            end
+            TextBox.Text = ""
+        end
+    end)
+end
+
+createControl("Radius", "Radius", config.radius, function(v) config.radius = v end)
+createControl("Height", "Height", config.height, function(v) config.height = v end)
+createControl("RotationSpeed", "Speed", config.rotationSpeed, function(v) config.rotationSpeed = v end)
+createControl("AttractionStrength", "Strength", config.attractionStrength, function(v) config.attractionStrength = v end)
+
+-- Minimize Button
+local MinimizeButton = Instance.new("TextButton")
+MinimizeButton.Size = UDim2.new(0, 22, 0, 22)
+MinimizeButton.Position = UDim2.new(1, -27, 0, 5)
+MinimizeButton.Text = "-"
+MinimizeButton.BackgroundColor3 = Colors.Button
+MinimizeButton.TextColor3 = Colors.Text
+MinimizeButton.Font = Enum.Font.GothamBold
+MinimizeButton.TextSize = 13
+MinimizeButton.ZIndex = 12
+MinimizeButton.Parent = HeaderFrame
+local MinimizeCorner = Instance.new("UICorner") MinimizeCorner.CornerRadius = UDim.new(0, 11) MinimizeCorner.Parent = MinimizeButton
+addHoverAnimation(MinimizeButton)
+
+local minimized = false
+MinimizeButton.MouseButton1Click:Connect(function()
+    minimized = not minimized
+    if minimized then
+        TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(0, 220, 0, 32)}):Play()
+        TweenService:Create(ContentFrame, TweenInfo.new(0.2), {Position = UDim2.new(0, 0, 0, 10)}):Play()
+        TweenService:Create(MainFrame, TweenInfo.new(0.25), {GroupTransparency = 0.4}):Play()
+        ContentFrame.Visible = false
+        MinimizeButton.Text = "+"
+    else
+        ContentFrame.Visible = true
+        TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(0, 220, 0, 340)}):Play()
+        TweenService:Create(ContentFrame, TweenInfo.new(0.2), {Position = UDim2.new(0, 0, 0, 32)}):Play()
+        TweenService:Create(MainFrame, TweenInfo.new(0.25), {GroupTransparency = 0}):Play()
+        MinimizeButton.Text = "-"
+    end
+    playSound("12221967")
+end)
+
+-- Draggable GUI
+local dragging, dragInput, dragStart, startPos
+HeaderFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
+        end)
+    end
+end)
+HeaderFrame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+-- Extra Controls
+local ExtraFrame = Instance.new("Frame")
+ExtraFrame.Size = UDim2.new(0, 200, 0, 70)
+ExtraFrame.Position = UDim2.new(0.05, 0, 0.74, 0)
+ExtraFrame.BackgroundTransparency = 1
+ExtraFrame.Parent = ContentFrame
+
+local ExtraGrid = Instance.new("UIGridLayout")
+ExtraGrid.Parent = ExtraFrame
+ExtraGrid.CellSize = UDim2.new(0, 94, 0, 30)
+ExtraGrid.CellPadding = UDim2.new(0, 10, 0, 8)
+
+local function createExtraButton(name, callback)
+    local Btn = Instance.new("TextButton")
+    Btn.Text = name
+    Btn.Font = Enum.Font.GothamBold
+    Btn.TextSize = 10
+    Btn.TextWrapped = true
+    Btn.TextColor3 = Colors.Text
+    Btn.Parent = ExtraFrame
+    local BtnCorner = Instance.new("UICorner") BtnCorner.CornerRadius = UDim.new(0, 6) BtnCorner.Parent = Btn
+    addHoverAnimation(Btn)
+    Btn.MouseButton1Click:Connect(function()
+        callback(Btn)
+    end)
+end
+
+-- Переменные состояний
+local noFallEnabled = false
+local noclipEnabled = false
+local noclipConnection = nil
+local noFallConnection = nil
+local fpsBoostEnabled = false
+
+local function toggleButtonState(button, state)
+    button:SetAttribute("IsActive", state)
+    local targetColor = state and Colors.ButtonActive or Colors.Button
+    TweenService:Create(button, TweenInfo.new(0.2), {BackgroundColor3 = targetColor}):Play()
+end
+
+-- 1. NO FALL DAMAGE
+createExtraButton("No Fall", function(btn)
+    noFallEnabled = not noFallEnabled
+    toggleButtonState(btn, noFallEnabled)
+    playSound("12221967")
+
+    if noFallEnabled then
+        local novel = Vector3.zero
+        local function nofalldamage(chr)
+            local root = chr:WaitForChild("HumanoidRootPart", 5)
+            if root then
+                if noFallConnection then noFallConnection:Disconnect() end
+                noFallConnection = RunService.Heartbeat:Connect(function()
+                    if not root.Parent or not noFallEnabled then 
+                        if noFallConnection then noFallConnection:Disconnect() end 
+                        return 
+                    end
+                    local oldvel = root.AssemblyLinearVelocity
+                    root.AssemblyLinearVelocity = novel
+                    RunService.RenderStepped:Wait()
+                    root.AssemblyLinearVelocity = oldvel
+                end)
+            end
+        end
+        if LocalPlayer.Character then nofalldamage(LocalPlayer.Character) end
+        LocalPlayer.CharacterAdded:Connect(nofalldamage)
+    else
+        if noFallConnection then noFallConnection:Disconnect() end
+    end
+end)
+
+-- 2. NOCLIP
+createExtraButton("Noclip", function(btn)
+    noclipEnabled = not noclipEnabled
+    toggleButtonState(btn, noclipEnabled)
+    playSound("12221967")
+
+    if noclipEnabled then
+        noclipConnection = RunService.Stepped:Connect(function()
+            if not noclipEnabled then
+                if noclipConnection then noclipConnection:Disconnect() end
+                return
+            end
+            if LocalPlayer.Character then
+                for _, v in pairs(LocalPlayer.Character:GetDescendants()) do
+                    if v:IsA('BasePart') and v.CanCollide then
+                        v.CanCollide = false
+                    end
+                end
+            end
+        end)
+    else
+        if noclipConnection then 
+            noclipConnection:Disconnect() 
+            noclipConnection = nil
+        end
+        if LocalPlayer.Character then
+            for _, v in pairs(LocalPlayer.Character:GetDescendants()) do
+                if v:IsA('BasePart') and (v.Name == "HumanoidRootPart" or v.Name == "UpperTorso" or v.Name == "LowerTorso" or v.Name == "Head" or v.Name == "Torso") then
+                    v.CanCollide = true
+                end
+            end
+        end
+    end
+end)
+
+-- РЕВОРК СИСТЕМЫ ПОЛЕТА
+local flying = false
+local flySpeed = 50
+local upPressed = false
+local downPressed = false
+local flyConnection = nil
+local bv, bg
+
+local FlyControls = Instance.new("ScreenGui")
+FlyControls.Name = "FlyMobileControls"
+FlyControls.ResetOnSpawn = false
+FlyControls.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+local UpButton = Instance.new("TextButton")
+UpButton.Size = UDim2.new(0, 45, 0, 45)
+UpButton.Position = UDim2.new(0.85, 0, 0.5, -55)
+UpButton.Text = "▲"
+UpButton.TextColor3 = Colors.Text
+UpButton.BackgroundColor3 = Colors.Button
+UpButton.Font = Enum.Font.GothamBold
+UpButton.TextSize = 20
+UpButton.Visible = false
+UpButton.Parent = FlyControls
+local UC = Instance.new("UICorner") UC.CornerRadius = UDim.new(0, 22) UC.Parent = UpButton
+
+local DownButton = Instance.new("TextButton")
+DownButton.Size = UDim2.new(0, 45, 0, 45)
+DownButton.Position = UDim2.new(0.85, 0, 0.5, 5)
+DownButton.Text = "▼"
+DownButton.TextColor3 = Colors.Text
+DownButton.BackgroundColor3 = Colors.Button
+DownButton.Font = Enum.Font.GothamBold
+DownButton.TextSize = 20
+DownButton.Visible = false
+DownButton.Parent = FlyControls
+local DC = Instance.new("UICorner") DC.CornerRadius = UDim.new(0, 22) DC.Parent = DownButton
+
+UpButton.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then upPressed = true end
+end)
+UpButton.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then upPressed = false end
+end)
+DownButton.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then downPressed = true end
+end)
+DownButton.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then downPressed = false end
+end)
+
+-- 3. FLY
+createExtraButton("Fly V2", function(btn)
+    flying = not flying
+    toggleButtonState(btn, flying)
+    UpButton.Visible = flying
+    DownButton.Visible = flying
+    playSound("12221967")
+    
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    
+    if not hrp or not hum then return end
+    
+    if flying then
+        hum.PlatformStand = true
+        
+        bg = Instance.new("BodyGyro")
+        bg.Name = "FlyGyro"
+        bg.maxTorque = Vector3.new(9e9, 9e9, 9e9)
+        bg.cframe = hrp.CFrame
+        bg.Parent = hrp
+        
+        bv = Instance.new("BodyVelocity")
+        bv.Name = "FlyVelocity"
+        bv.maxForce = Vector3.new(9e9, 9e9, 9e9)
+        bv.velocity = Vector3.new(0, 0.1, 0)
+        bv.Parent = hrp
+        
+        local camera = workspace.CurrentCamera
+        flyConnection = RunService.Heartbeat:Connect(function()
+            if not flying or not hrp.Parent or not hum.Parent then
+                if flyConnection then flyConnection:Disconnect() end
+                return
+            end
+            
+            local moveDir = hum.MoveDirection
+            local cameraCFrame = camera.CFrame
+            local flyVel = Vector3.zero
+            
+            if moveDir.Magnitude > 0 then
+                local lookVector = cameraCFrame.LookVector
+                local rightVector = cameraCFrame.RightVector
+                flyVel = (lookVector * moveDir.Z * -1 + rightVector * moveDir.X).Unit * flySpeed
+            end
+            
+            if upPressed then
+                flyVel = flyVel + Vector3.new(0, flySpeed, 0)
+            elseif downPressed then
+                flyVel = flyVel - Vector3.new(0, flySpeed, 0)
+            end
+            
+            bv.velocity = flyVel
+            bg.cframe = cameraCFrame
+        end)
+    else
+        if flyConnection then flyConnection:Disconnect() end
+        hum.PlatformStand = false
+        if hrp:FindFirstChild("FlyGyro") then hrp.FlyGyro:Destroy() end
+        if hrp:FindFirstChild("FlyVelocity") then hrp.FlyVelocity:Destroy() end
+    end
+end)
+
+-- 4. FPS BOOST
+createExtraButton("FPS Boost", function(btn)
+    fpsBoostEnabled = not fpsBoostEnabled
+    toggleButtonState(btn, fpsBoostEnabled)
+    playSound("12221967")
+    
+    if fpsBoostEnabled then
+        Lighting.GlobalShadows = false
+        Lighting.FogEnd = 9e9
+        pcall(function() settings().Rendering.QualityLevel = Enum.QualityLevel.Level01 end)
+        
+        for _, v in pairs(workspace:GetDescendants()) do
+            if v:IsA("Decal") or v:IsA("Texture") then
+                v.Transparency = 1
+            elseif v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Smoke") or v:IsA("Sparkles") then
+                v.Enabled = false
+            elseif v:IsA("PostEffect") or v:IsA("Atmosphere") or v:IsA("Sky") then
+                v.Enabled = false
+            end
+        end
+    else
+        Lighting.GlobalShadows = true
+        pcall(function() settings().Rendering.QualityLevel = Enum.QualityLevel.Automatic end)
+        for _, v in pairs(workspace:GetDescendants()) do
+            if v:IsA("Decal") or v:IsA("Texture") then
+                v.Transparency = 0
+            elseif v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Smoke") or v:IsA("Sparkles") then
+                v.Enabled = true
+            end
+        end
+    end
+end)
+
+-- Ring Parts Logic
+local ringPartsEnabled = false
+local parts = {}
+
+local function RetainPart(Part)
+    if Part:IsA("BasePart") and not Part.Anchored and Part:IsDescendantOf(workspace) then
+        if Part.Parent == LocalPlayer.Character or Part:IsDescendantOf(LocalPlayer.Character) then return false end
+        Part.CustomPhysicalProperties = PhysicalProperties.new(0, 0, 0, 0, 0)
+        Part.CanCollide = false
+        return true
+    end
+    return false
+end
+
+local function addPart(part)
+    if RetainPart(part) and not table.find(parts, part) then
+        table.insert(parts, part)
+    end
+end
+
+local function removePart(part)
+    local index = table.find(parts, part)
+    if index then table.remove(parts, index) end
+end
+
+for _, part in pairs(workspace:GetDescendants()) do addPart(part) end
+workspace.DescendantAdded:Connect(addPart)
+workspace.DescendantRemoving:Connect(removePart)
+
+RunService.Heartbeat:Connect(function()
+    if not ringPartsEnabled then return end
+    pcall(function() sethiddenproperty(LocalPlayer, "SimulationRadius", math.huge) end)
+    local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        local tornadoCenter = hrp.Position
+        for i = #parts, 1, -1 do
+            local part = parts[i]
+            if part and part.Parent and not part.Anchored then
+                local pos = part.Position
+                local distance = (Vector3.new(pos.X, tornadoCenter.Y, pos.Z) - tornadoCenter).Magnitude
+                local angle = math.atan2(pos.Z - tornadoCenter.Z, pos.X - tornadoCenter.X)
+                local newAngle = angle + math.rad(config.rotationSpeed)
+                local targetPos = Vector3.new(
+                    tornadoCenter.X + math.cos(newAngle) * math.min(config.radius, distance),
+                    tornadoCenter.Y + (config.height * (math.abs(math.sin((pos.Y - tornadoCenter.Y) / config.height)))),
+                    tornadoCenter.Z + math.sin(newAngle) * math.min(config.radius, distance)
+                )
+                part.Velocity = (targetPos - part.Position).unit * config.attractionStrength
+            else
+                table.remove(parts, i)
+            end
+        end
+    end
+end)
+
+ToggleButton.MouseButton1Click:Connect(function()
+    ringPartsEnabled = not ringPartsEnabled
+    ToggleButton.Text = ringPartsEnabled and "Tornado On" or "Tornado Off"
+    
+    local targetColor = ringPartsEnabled and Colors.TornadoOn or Colors.TornadoOff
+    ToggleButton:SetAttribute("OriginalColor", targetColor)
+    TweenService:Create(ToggleButton, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundColor3 = targetColor}):Play()
+    
+    playSound("12221967")
+end)
+
+-- УВЕДОМЛЕНИЕ
+local function createAchievementNotify()
+    local AchievementGui = Instance.new("ScreenGui")
+    AchievementGui.Name = "AchievementGui"
+    AchievementGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+    
+    local Box = Instance.new("Frame")
+    Box.Size = UDim2.new(0, 260, 0, 65)
+    Box.Position = UDim2.new(0.5, -130, 0, -80)
+    Box.BackgroundColor3 = Colors.Background
+    Box.BorderSizePixel = 0
+    Box.Parent = AchievementGui
+    
+    local BCorner = Instance.new("UICorner") BCorner.CornerRadius = UDim.new(0, 10) BCorner.Parent = Box
+    local Stroke = Instance.new("UIStroke") Stroke.Color = Colors.Header Stroke.Thickness = 2 Stroke.Parent = Box
+    
+    local AvatarBg = Instance.new("Frame")
+    AvatarBg.Size = UDim2.new(0, 45, 0, 45)
+    AvatarBg.Position = UDim2.new(0, 10, 0, 10)
+    AvatarBg.BackgroundColor3 = Colors.AvatarBg
+    AvatarBg.BorderSizePixel = 0
+    AvatarBg.Parent = Box
+    local ABgCorner = Instance.new("UICorner") ABgCorner.CornerRadius = UDim.new(1, 0) ABgCorner.Parent = AvatarBg
+    
+    local Avatar = Instance.new("ImageLabel")
+    Avatar.Size = UDim2.new(1, 0, 1, 0)
+    Avatar.BackgroundTransparency = 1
+    Avatar.Parent = AvatarBg
+    local ACorner = Instance.new("UICorner") ACorner.CornerRadius = UDim.new(1, 0) ACorner.Parent = Avatar
+    
+    task.spawn(function()
+        pcall(function()
+            local id = Players:GetUserIdFromNameAsync("ITZ_BECON061")
+            Avatar.Image = Players:GetUserThumbnailAsync(id, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100)
+        end)
+    end)
+    
+    local TitleLabel = Instance.new("TextLabel")
+    TitleLabel.Size = UDim2.new(1, -70, 0, 20)
+    TitleLabel.Position = UDim2.new(0, 65, 0, 12)
+    TitleLabel.Text = "Script Activated 🏆"
+    TitleLabel.TextColor3 = Color3.fromRGB(180, 130, 255)
+    TitleLabel.Font = Enum.Font.GothamBold
+    TitleLabel.TextSize = 12
+    TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    TitleLabel.BackgroundTransparency = 1
+    TitleLabel.Parent = Box
+    
+    local TextLabel = Instance.new("TextLabel")
+    TextLabel.Size = UDim2.new(1, -70, 0, 20)
+    TextLabel.Position = UDim2.new(0, 65, 0, 28)
+    TextLabel.Text = "Enjoy using, " .. LocalPlayer.Name .. "!"
+    TextLabel.TextColor3 = Colors.Text
+    TextLabel.Font = Enum.Font.GothamSemibold
+    TextLabel.TextSize = 11
+    TextLabel.TextXAlignment = Enum.TextXAlignment.Left
+    TextLabel.BackgroundTransparency = 1
+    TextLabel.Parent = Box
+    
+    TweenService:Create(Box, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position = UDim2.new(0.5, -130, 0, 25)}):Play()
+    
+    task.delay(4, function()
+        TweenService:Create(Box, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Position = UDim2.new(0.5, -130, 0, -80)}):Play()
+        task.wait(0.5)
+        AchievementGui:Destroy()
+    end)
+end
+
+createAchievementNotify()
