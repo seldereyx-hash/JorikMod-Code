@@ -1,0 +1,580 @@
+local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local HttpService = game:GetService("HttpService")
+local Workspace = game:GetService("Workspace")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+local assetId = "105397439060614"
+local finalBg = "rbxassetid://" .. assetId
+
+pcall(function()
+    local url = "https://assetdelivery.roblox.com/v1/asset/?id=" .. assetId
+    local success, content = pcall(game.HttpGet, game, url)
+    if success and content then
+        local imageId = content:match('<url>http://www.roblox.com/asset/%?id=(%d+)</url>')
+        if imageId then
+            finalBg = "rbxassetid://" .. imageId
+        end
+    end
+end)
+
+WindUI:AddTheme({
+    Name = "Jorik Classic",
+    Accent = Color3.fromHex("#7c3aed"),      
+    Background = Color3.fromHex("#100c19"),  
+    Outline = Color3.fromHex("#2d2442"),     
+    Text = Color3.fromHex("#ffffff"),
+    Placeholder = Color3.fromHex("#7c7289"),
+    Button = Color3.fromHex("#6d28d9"),
+    Icon = Color3.fromHex("#c084fc"),
+})
+
+local Window = WindUI:CreateWindow({
+    Title = "JorikMod/MM2", 
+    Author = "by ITZ_BECON061", 
+    Folder = "myhub",
+    Icon = "paint-bucket",
+    Theme = "Jorik Classic", 
+    Acrylic = true,
+    Transparent = true,
+    Background = finalBg, 
+    Size = UDim2.fromOffset(680, 460),
+    MinSize = Vector2.new(560, 350),
+    MaxSize = Vector2.new(850, 560),
+    ToggleKey = Enum.KeyCode.RightShift,
+    Resizable = true,
+    AutoScale = true,
+    NewElements = true,
+    BackgroundImageTransparency = 0.65,
+    HideSearchBar = false,
+    ScrollBarEnabled = false,
+    SideBarWidth = 200,
+    Topbar = {
+        Height = 44,
+        ButtonsType = "Default",
+    },
+    OpenButton = {
+        Title = "JorikMod/MM2", 
+        Icon = "zap",
+        CornerRadius = UDim.new(1, 0),
+        StrokeThickness = 3,
+        Enabled = true,
+        Draggable = true,
+        OnlyMobile = false,
+        Scale = 1,
+        Color = ColorSequence.new(
+            Color3.fromHex("#000000"),
+            Color3.fromHex("#000000")
+        ),
+    },
+    User = {
+        Enabled = true,
+        Anonymous = false,
+        Callback = function()
+            print("user panel clicked")
+        end,
+    },
+})
+
+local MainTab = Window:Tab({ Title = "Main", Icon = "house" })
+local MurderTab = Window:Tab({ Title = "Murder", Icon = "skull" })
+local SheriffTab = Window:Tab({ Title = "Sheriff", Icon = "shield" })
+local InnocentTab = Window:Tab({ Title = "Innocent", Icon = "user" })
+local ThemeTab = Window:Tab({ Title = "Settings", Icon = "settings" })
+
+local espEnabled = false
+local autoGrabEnabled = false
+local speedEnabled = false
+local jumpEnabled = false
+local infJumpEnabled = false
+local noclipEnabled = false
+local fullbrightEnabled = false
+local fovEnabled = false
+local fpsBoosterEnabled = false
+local coinTeleportEnabled = false
+
+local function getRole(player)
+	if not player.Character then return "Innocent" end
+	
+	for _, item in ipairs(player.Character:GetChildren()) do
+		if item:IsA("Tool") then
+			if item.Name == "Knife" then
+				return "Murderer"
+			elseif item.Name == "Gun" or item.Name == "Revolver" then
+				return "Sheriff"
+			end
+		end
+	end
+	
+	if player:FindFirstChild("Backpack") then
+		local backpack = player.Backpack
+		for _, item in ipairs(backpack:GetChildren()) do
+			if item:IsA("Tool") then
+				if item.Name == "Knife" then
+					return "Murderer"
+				elseif item.Name == "Gun" or item.Name == "Revolver" then
+					return "Sheriff"
+				end
+			end
+		end
+	end
+	
+	for _, p in ipairs(Workspace:GetChildren()) do
+		if p:IsA("Model") and p.Name == player.Name then
+			for _, item in ipairs(p:GetChildren()) do
+				if item:IsA("Tool") then
+					if item.Name == "Knife" then
+						return "Murderer"
+					elseif item.Name == "Gun" or item.Name == "Revolver" then
+						return "Sheriff"
+					end
+				end
+			end
+		end
+	end
+	
+	if player:GetAttribute("Role") == "Murderer" then return "Murderer" end
+	if player:GetAttribute("Role") == "Sheriff" then return "Sheriff" end
+	if player:GetAttribute("Role") == "Hero" then return "Hero" end
+	
+	return "Innocent"
+end
+
+local function updateESP()
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer and player.Character then
+			local highlight = player.Character:FindFirstChild("MM2Highlight")
+			if espEnabled then
+				if not highlight then
+					highlight = Instance.new("Highlight")
+					highlight.Name = "MM2Highlight"
+					highlight.Parent = player.Character
+				end
+				
+				local role = getRole(player)
+				if role == "Murderer" then
+					highlight.FillColor = Color3.fromRGB(255, 0, 0)
+				elseif role == "Sheriff" then
+					highlight.FillColor = Color3.fromRGB(0, 0, 255)
+				elseif role == "Hero" then
+					highlight.FillColor = Color3.fromRGB(255, 255, 0)
+				else
+					highlight.FillColor = Color3.fromRGB(0, 255, 0)
+				end
+				highlight.Enabled = true
+			else
+				if highlight then
+					highlight.Enabled = false
+				end
+			end
+		end
+	end
+end
+
+MainTab:Toggle({
+    Title = "ESP",
+    Value = false,
+    Callback = function(state)
+        espEnabled = state
+        if not espEnabled then
+            updateESP()
+        end
+    end,
+})
+
+MainTab:Toggle({
+    Title = "Speed Boost",
+    Value = false,
+    Callback = function(state)
+        speedEnabled = state
+    end,
+})
+
+MainTab:Toggle({
+    Title = "Jump Power",
+    Value = false,
+    Callback = function(state)
+        jumpEnabled = state
+    end,
+})
+
+MainTab:Toggle({
+    Title = "Infinite Jump",
+    Value = false,
+    Callback = function(state)
+        infJumpEnabled = state
+    end,
+})
+
+MainTab:Toggle({
+    Title = "Noclip",
+    Value = false,
+    Callback = function(state)
+        noclipEnabled = state
+    end,
+})
+
+MainTab:Toggle({
+    Title = "Fullbright",
+    Value = false,
+    Callback = function(state)
+        fullbrightEnabled = state
+        if state then
+            game:GetService("Lighting").Brightness = 2
+            game:GetService("Lighting").ClockTime = 14
+            game:GetService("Lighting").GlobalShadows = false
+        else
+            game:GetService("Lighting").Brightness = 1
+            game:GetService("Lighting").GlobalShadows = true
+        end
+    end,
+})
+
+MainTab:Toggle({
+    Title = "FOV Changer",
+    Value = false,
+    Callback = function(state)
+        fovEnabled = state
+        Camera.FieldOfView = state and 90 or 70
+    end,
+})
+
+MainTab:Toggle({
+    Title = "FPS Booster",
+    Value = false,
+    Callback = function(state)
+        fpsBoosterEnabled = state
+        for _, v in ipairs(Workspace:GetDescendants()) do
+            if v:IsA("BasePart") then
+                v.Material = state and Enum.Material.SmoothPlastic or v.Material
+            end
+        end
+    end,
+})
+
+MainTab:Button({
+    Title = "Rejoin",
+    Callback = function()
+        game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+    end,
+})
+
+MainTab:Button({
+    Title = "Server Hop",
+    Callback = function()
+        local servers = HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"))
+        for _, server in ipairs(servers.data) do
+            if server.playing < server.maxPlayers and server.id ~= game.JobId then
+                game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, server.id, LocalPlayer)
+                break
+            end
+        end
+    end,
+})
+
+MainTab:Toggle({
+    Title = "Coin Teleport to Bag",
+    Value = false,
+    Callback = function(state)
+        coinTeleportEnabled = state
+    end,
+})
+
+local NotifParagraph = MainTab:Paragraph({
+    Title = "Role Notifier",
+    Content = "Roles: Loading...",
+})
+
+InnocentTab:Toggle({
+    Title = "Auto Grab Gun",
+    Value = false,
+    Callback = function(state)
+        autoGrabEnabled = state
+    end,
+})
+
+MurderTab:Toggle({
+    Title = "Kill Aura",
+    Value = false,
+    Callback = function(state)
+    end,
+})
+
+MurderTab:Toggle({
+    Title = "Knife Throw Aimbot",
+    Value = false,
+    Callback = function(state)
+    end,
+})
+
+MurderTab:Toggle({
+    Title = "Silent Aim Knife",
+    Value = false,
+    Callback = function(state)
+    end,
+})
+
+MurderTab:Toggle({
+    Title = "Auto Kill All",
+    Value = false,
+    Callback = function(state)
+    end,
+})
+
+MurderTab:Button({
+    Title = "Teleport to Sheriff",
+    Callback = function()
+        for _, player in ipairs(Players:GetPlayers()) do
+            if getRole(player) == "Sheriff" and player.Character and player.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                LocalPlayer.Character.HumanoidRootPart.CFrame = player.Character.HumanoidRootPart.CFrame
+                break
+            end
+        end
+    end,
+})
+
+SheriffTab:Toggle({
+    Title = "Gun Aimbot",
+    Value = false,
+    Callback = function(state)
+    end,
+})
+
+SheriffTab:Toggle({
+    Title = "Auto Shoot Murderer",
+    Value = false,
+    Callback = function(state)
+    end,
+})
+
+SheriffTab:Toggle({
+    Title = "Show Murderer Distance",
+    Value = false,
+    Callback = function(state)
+    end,
+})
+
+SheriffTab:Toggle({
+    Title = "Bullet Tracers",
+    Value = false,
+    Callback = function(state)
+    end,
+})
+
+ThemeTab:Toggle({
+    Title = "Background Image",
+    Value = true,
+    Callback = function(state)
+        Window:SetBackgroundImageTransparency(state and 0.65 or 1)
+    end,
+})
+
+ThemeTab:Dropdown({
+    Title = "Theme",
+    Values = (function()
+        local names = {}
+        for name in pairs(WindUI:GetThemes()) do
+            table.insert(names, name)
+        end
+        table.sort(names)
+        return names
+    end)(),
+    Value = WindUI:GetCurrentTheme(),
+    Callback = function(selected)
+        WindUI:SetTheme(selected)
+    end,
+})
+
+ThemeTab:Toggle({
+    Title = "Acrylic",
+    Value = WindUI:GetTransparency(),
+    Callback = function()
+        local isOn = WindUI.Window.Acrylic
+        WindUI:ToggleAcrylic(not isOn)
+    end,
+})
+
+ThemeTab:Toggle({
+    Title = "Transparent",
+    Value = WindUI:GetTransparency(),
+    Callback = function(state)
+        Window:ToggleTransparency(state)
+    end
+})
+
+local currentKey = Enum.KeyCode.RightShift
+
+ThemeTab:Keybind({
+    Title = "Toggle UI Key",
+    Value = currentKey,
+    Callback = function(v)
+        currentKey = (typeof(v) == "EnumItem") and v or Enum.KeyCode[v]
+        Window:SetToggleKey(currentKey)
+    end,
+})
+
+local mainGui = Window.Instance
+local openButtonFrame = WindUI.OpenButton and WindUI.OpenButton.Instance or nil
+
+if mainGui and mainGui:IsA("ScreenGui") then
+    mainGui.CanvasGroup = mainGui:FindFirstChildOfClass("CanvasGroup") or Instance.new("CanvasGroup", mainGui)
+end
+
+local function applyBorders(btn)
+    if not btn then return end
+    btn:GetPropertyChangedSignal("Position"):Connect(function()
+        local screenX = Camera.ViewportSize.X
+        local screenY = Camera.ViewportSize.Y
+        local btnX = btn.AbsolutePosition.X
+        local btnY = btn.AbsolutePosition.Y
+        local sizeX = btn.AbsoluteSize.X
+        local sizeY = btn.AbsoluteSize.Y
+        
+        local clampedX = math.clamp(btnX, 0, screenX - sizeX)
+        local clampedY = math.clamp(btnY, 0, screenY - sizeY)
+        
+        if btnX ~= clampedX or btnY ~= clampedY then
+            btn.Position = UDim2.fromOffset(clampedX, clampedY)
+        end
+    end)
+end
+
+if openButtonFrame then
+    applyBorders(openButtonFrame)
+end
+
+local isUiOpen = true
+local isTweening = false
+
+local function setVisibility(state)
+    if isTweening then return end
+    isTweening = true
+    isUiOpen = state
+    
+    local tInfo = TweenInfo.new(0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+    
+    if isUiOpen then
+        if openButtonFrame then
+            TweenService:Create(openButtonFrame, tInfo, {Size = UDim2.fromScale(0, 0)}):Play()
+        end
+        mainGui.Enabled = true
+        local openTween = TweenService:Create(mainGui.CanvasGroup, tInfo, {GroupTransparency = 0})
+        openTween:Play()
+        openTween.Completed:Connect(function() isTweening = false end)
+    else
+        if openButtonFrame then
+            TweenService:Create(openButtonFrame, tInfo, {Size = UDim2.fromOffset(60, 60)}):Play()
+        end
+        local closeTween = TweenService:Create(mainGui.CanvasGroup, tInfo, {GroupTransparency = 1})
+        closeTween:Play()
+        closeTween.Completed:Connect(function()
+            mainGui.Enabled = false
+            isTweening = false
+        end)
+    end
+end
+
+UserInputService.InputBegan:Connect(function(input)
+    if input.KeyCode == currentKey then
+        setVisibility(not isUiOpen)
+    end
+end)
+
+UserInputService.JumpRequest:Connect(function()
+    if infJumpEnabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+        LocalPlayer.Character.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+    end
+end)
+
+if WindUI.OpenButton then
+    WindUI.OpenButton.Callback = function()
+        setVisibility(true)
+    end
+end
+
+WindUI:Notify({
+    Title = "JorikMod/MM2",
+    Content = "Welcome to JorikMod/MM2!",
+})
+WindUI:SetNotificationLower(true)
+
+task.spawn(function()
+	while true do
+		task.wait(0.2)
+		if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+			if autoGrabEnabled then
+				for _, obj in ipairs(Workspace:GetDescendants()) do
+					if obj.Name == "GunDrop" and obj:IsA("BasePart") then
+						local originalPos = LocalPlayer.Character.HumanoidRootPart.CFrame
+						LocalPlayer.Character.HumanoidRootPart.CFrame = obj.CFrame
+						task.wait()
+						if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+							LocalPlayer.Character.HumanoidRootPart.CFrame = originalPos
+						end
+						break
+					end
+				end
+			end
+			
+			if coinTeleportEnabled then
+				for _, obj in ipairs(Workspace:GetDescendants()) do
+					if (obj.Name == "Coin_Server" or obj.Name == "Coin") and obj:IsA("BasePart") then
+						local originalPos = LocalPlayer.Character.HumanoidRootPart.CFrame
+						LocalPlayer.Character.HumanoidRootPart.CFrame = obj.CFrame
+						task.wait()
+						if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+							LocalPlayer.Character.HumanoidRootPart.CFrame = originalPos
+						end
+						break
+					end
+				end
+			end
+		end
+	end
+end)
+
+RunService.RenderStepped:Connect(function()
+	if espEnabled then
+		updateESP()
+	end
+	
+	if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+		if speedEnabled then
+			LocalPlayer.Character.Humanoid.WalkSpeed = 24
+		else
+			LocalPlayer.Character.Humanoid.WalkSpeed = 16
+		end
+		
+		if jumpEnabled then
+			LocalPlayer.Character.Humanoid.JumpPower = 70
+		else
+			LocalPlayer.Character.Humanoid.JumpPower = 50
+		end
+	end
+	
+	if noclipEnabled and LocalPlayer.Character then
+		for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
+			if part:IsA("BasePart") then
+				part.CanCollide = false
+			end
+		end
+	end
+	
+	local murdererFound = "None"
+	local sheriffFound = "None"
+	
+	for _, player in ipairs(Players:GetPlayers()) do
+		local role = getRole(player)
+		if role == "Murderer" then
+			murdererFound = player.Name
+		elseif role == "Sheriff" then
+			sheriffFound = player.Name
+		end
+	end
+	
+	NotifParagraph:SetDesc("Murderer: " .. murdererFound .. "\nSheriff: " .. sheriffFound)
+end)
