@@ -4,13 +4,9 @@ local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
 local TeleportService = game:GetService("TeleportService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
-local SoundService = game:GetService("SoundService")
-local StarterGui = game:GetService("StarterGui")
 local TweenService = game:GetService("TweenService")
 local Camera = Workspace.CurrentCamera
-local Mouse = LocalPlayer:GetMouse()
 
 local Theme = {
     Background = Color3.fromRGB(20, 15, 30),
@@ -27,9 +23,7 @@ local Theme = {
 local Flying = false
 local FlyV2Enabled = false
 local Noclipping = false
-local SpeedEnabled = false
 local JumpEnabled = false
-local GravityEnabled = false
 local SpinEnabled = false
 local RingVisualEnabled = false
 local RingPartsEnabled = false
@@ -40,9 +34,9 @@ local AntiAFKEnabled = false
 local FreecamEnabled = false
 local InvisibleEnabled = false
 
-local FlyConnection, FlyV2Connection, NoclipConnection, JumpConnection, GravityConnection
+local FlyConnection, FlyV2Connection, NoclipConnection, JumpConnection
 local SpinConnection, RingVisualConnection, RingPartsConnection, AimbotConnection
-local ESPConnection, ESPV2Connection, AntiAFKConnection, FreecamConnection
+local ESPV2Connection, AntiAFKConnection, FreecamConnection
 
 local currentSpeed = 16
 local currentGravity = 196.2
@@ -56,32 +50,34 @@ local aimbotFOV = 120
 local aimbotSmoothness = 0.25
 local espObjects = {}
 local espConnections = {}
+local waypoints = {}
+local isTeleporting = false
 
-local ringPartsConfig = {
-    radius = 50,
-    height = 100,
-    rotationSpeed = 10,
-    attractionStrength = 1000,
-}
-
-local ringPartsData = {
-    parts = {},
-    attachment = nil,
-    folder = nil,
-}
+local ringPartsConfig = { radius = 50, attractionStrength = 1000 }
+local ringPartsData = { folder = nil, attachment = nil }
 
 local function tweenColor(instance, property, toColor, duration)
     TweenService:Create(instance, TweenInfo.new(duration or 0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {[property] = toColor}):Play()
 end
 
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Parent = (game:GetService("CoreGui") or LocalPlayer:WaitForChild("PlayerGui"))
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+-- Удаляем старый GUI при повторном запуске
+local coreParent = (game:GetService("CoreGui") or LocalPlayer:WaitForChild("PlayerGui"))
+if coreParent:FindFirstChild("JorikMOD_Gui") then
+    coreParent.JorikMOD_Gui:Destroy()
+end
 
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "JorikMOD_Gui"
+ScreenGui.Parent = coreParent
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.ResetOnSpawn = false
+
+-- КНОПКА "J"
 local DragButton = Instance.new("TextButton")
+DragButton.Name = "OpenButton"
 DragButton.Parent = ScreenGui
 DragButton.Size = UDim2.new(0, 50, 0, 50)
-DragButton.Position = UDim2.new(0.1, 0, 0.5, -25)
+DragButton.Position = UDim2.new(0.02, 0, 0.4, 0)
 DragButton.BackgroundColor3 = Theme.FrameBg
 DragButton.TextColor3 = Theme.Text
 DragButton.Text = "J"
@@ -89,7 +85,9 @@ DragButton.Font = Enum.Font.SourceSansBold
 DragButton.TextSize = 24
 DragButton.BorderSizePixel = 0
 DragButton.Active = true
+DragButton.ZIndex = 100
 Instance.new("UICorner", DragButton).CornerRadius = UDim.new(0, 10)
+
 local DragStroke = Instance.new("UIStroke", DragButton)
 DragStroke.Color = Theme.Accent
 DragStroke.Thickness = 2
@@ -125,24 +123,55 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
-local MainGui = Instance.new("ScreenGui")
-MainGui.Parent = ScreenGui.Parent
-MainGui.Enabled = false
-MainGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-
-local MainFrame = Instance.new("Frame")
-MainFrame.Parent = MainGui
+-- ОСНОВНОЕ ОКНО С АНИМАЦИЕЙ (CanvasGroup)
+local MainFrame = Instance.new("CanvasGroup")
+MainFrame.Name = "MainFrame"
+MainFrame.Parent = ScreenGui
 MainFrame.Size = UDim2.new(0, 260, 0, 320)
 MainFrame.Position = UDim2.new(0.5, -130, 0.5, -160)
 MainFrame.BackgroundColor3 = Theme.Background
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
 MainFrame.ClipsDescendants = true
-
+MainFrame.Visible = false
+MainFrame.GroupTransparency = 1
+MainFrame.ZIndex = 10
 Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 12)
+
+local MainScale = Instance.new("UIScale", MainFrame)
+MainScale.Scale = 0.7
+
 local MainStroke = Instance.new("UIStroke", MainFrame)
 MainStroke.Color = Theme.Accent
 MainStroke.Thickness = 2
+
+-- ФУНКЦИЯ ПЛАВНОЙ АНИМАЦИИ ОТКРЫТИЯ/ЗАКРЫТИЯ
+local isMenuOpen = false
+local isAnimating = false
+
+local function toggleMenu()
+    if isAnimating then return end
+    isAnimating = true
+    isMenuOpen = not isMenuOpen
+
+    if isMenuOpen then
+        MainFrame.Visible = true
+        TweenService:Create(MainScale, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1}):Play()
+        local tweenAlpha = TweenService:Create(MainFrame, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {GroupTransparency = 0})
+        tweenAlpha:Play()
+        tweenAlpha.Completed:Connect(function() isAnimating = false end)
+    else
+        TweenService:Create(MainScale, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Scale = 0.7}):Play()
+        local tweenAlpha = TweenService:Create(MainFrame, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {GroupTransparency = 1})
+        tweenAlpha:Play()
+        tweenAlpha.Completed:Connect(function()
+            MainFrame.Visible = false
+            isAnimating = false
+        end)
+    end
+end
+
+DragButton.MouseButton1Click:Connect(toggleMenu)
 
 local frameDragging, frameDragStart, frameStartPos
 MainFrame.InputBegan:Connect(function(input)
@@ -176,30 +205,41 @@ Title.TextXAlignment = Enum.TextXAlignment.Left
 
 local TabContainer = Instance.new("Frame")
 TabContainer.Parent = MainFrame
-TabContainer.Size = UDim2.new(0, 140, 0, 26)
-TabContainer.Position = UDim2.new(1, -150, 0, 9)
+TabContainer.Size = UDim2.new(0, 150, 0, 26)
+TabContainer.Position = UDim2.new(1, -155, 0, 9)
 TabContainer.BackgroundTransparency = 1
 
 local CheatsTabBtn = Instance.new("TextButton")
 CheatsTabBtn.Parent = TabContainer
-CheatsTabBtn.Size = UDim2.new(0, 65, 1, 0)
+CheatsTabBtn.Size = UDim2.new(0, 48, 1, 0)
 CheatsTabBtn.Position = UDim2.new(0, 0, 0, 0)
 CheatsTabBtn.BackgroundColor3 = Theme.Accent
 CheatsTabBtn.TextColor3 = Theme.Text
 CheatsTabBtn.Text = "Читы"
 CheatsTabBtn.Font = Enum.Font.SourceSansBold
-CheatsTabBtn.TextSize = 13
+CheatsTabBtn.TextSize = 12
 Instance.new("UICorner", CheatsTabBtn).CornerRadius = UDim.new(0, 6)
+
+local WaypointsTabBtn = Instance.new("TextButton")
+WaypointsTabBtn.Parent = TabContainer
+WaypointsTabBtn.Size = UDim2.new(0, 48, 1, 0)
+WaypointsTabBtn.Position = UDim2.new(0, 51, 0, 0)
+WaypointsTabBtn.BackgroundColor3 = Theme.ToggleOff
+WaypointsTabBtn.TextColor3 = Theme.TextDark
+WaypointsTabBtn.Text = "Точки"
+WaypointsTabBtn.Font = Enum.Font.SourceSansBold
+WaypointsTabBtn.TextSize = 12
+Instance.new("UICorner", WaypointsTabBtn).CornerRadius = UDim.new(0, 6)
 
 local AccountTabBtn = Instance.new("TextButton")
 AccountTabBtn.Parent = TabContainer
-AccountTabBtn.Size = UDim2.new(0, 65, 1, 0)
-AccountTabBtn.Position = UDim2.new(0, 72, 0, 0)
+AccountTabBtn.Size = UDim2.new(0, 48, 1, 0)
+AccountTabBtn.Position = UDim2.new(0, 102, 0, 0)
 AccountTabBtn.BackgroundColor3 = Theme.ToggleOff
 AccountTabBtn.TextColor3 = Theme.TextDark
-AccountTabBtn.Text = "Аккаунт"
+AccountTabBtn.Text = "Акк"
 AccountTabBtn.Font = Enum.Font.SourceSansBold
-AccountTabBtn.TextSize = 13
+AccountTabBtn.TextSize = 12
 Instance.new("UICorner", AccountTabBtn).CornerRadius = UDim.new(0, 6)
 
 local ScrollingFrame = Instance.new("ScrollingFrame")
@@ -212,6 +252,16 @@ ScrollingFrame.ScrollBarThickness = 4
 ScrollingFrame.ScrollBarImageColor3 = Theme.Accent
 ScrollingFrame.Visible = true
 
+local WaypointsFrame = Instance.new("ScrollingFrame")
+WaypointsFrame.Parent = MainFrame
+WaypointsFrame.Size = UDim2.new(1, -10, 1, -50)
+WaypointsFrame.Position = UDim2.new(0, 5, 0, 45)
+WaypointsFrame.BackgroundTransparency = 1
+WaypointsFrame.BorderSizePixel = 0
+WaypointsFrame.ScrollBarThickness = 4
+WaypointsFrame.ScrollBarImageColor3 = Theme.Accent
+WaypointsFrame.Visible = false
+
 local AccountFrame = Instance.new("ScrollingFrame")
 AccountFrame.Parent = MainFrame
 AccountFrame.Size = UDim2.new(1, -10, 1, -50)
@@ -222,40 +272,44 @@ AccountFrame.ScrollBarThickness = 4
 AccountFrame.ScrollBarImageColor3 = Theme.Accent
 AccountFrame.Visible = false
 
-local AccountListLayout = Instance.new("UIListLayout")
-AccountListLayout.Parent = AccountFrame
+local WaypointsListLayout = Instance.new("UIListLayout", WaypointsFrame)
+WaypointsListLayout.Padding = UDim.new(0, 6)
+WaypointsListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+WaypointsListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    WaypointsFrame.CanvasSize = UDim2.new(0, 0, 0, WaypointsListLayout.AbsoluteContentSize.Y + 20)
+end)
+
+local AccountListLayout = Instance.new("UIListLayout", AccountFrame)
 AccountListLayout.Padding = UDim.new(0, 8)
 AccountListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-AccountListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-
 AccountListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
     AccountFrame.CanvasSize = UDim2.new(0, 0, 0, AccountListLayout.AbsoluteContentSize.Y + 20)
 end)
 
 CheatsTabBtn.MouseButton1Click:Connect(function()
-    CheatsTabBtn.BackgroundColor3 = Theme.Accent
-    CheatsTabBtn.TextColor3 = Theme.Text
-    AccountTabBtn.BackgroundColor3 = Theme.ToggleOff
-    AccountTabBtn.TextColor3 = Theme.TextDark
-    ScrollingFrame.Visible = true
-    AccountFrame.Visible = false
+    CheatsTabBtn.BackgroundColor3 = Theme.Accent; CheatsTabBtn.TextColor3 = Theme.Text
+    WaypointsTabBtn.BackgroundColor3 = Theme.ToggleOff; WaypointsTabBtn.TextColor3 = Theme.TextDark
+    AccountTabBtn.BackgroundColor3 = Theme.ToggleOff; AccountTabBtn.TextColor3 = Theme.TextDark
+    ScrollingFrame.Visible = true; WaypointsFrame.Visible = false; AccountFrame.Visible = false
+end)
+
+WaypointsTabBtn.MouseButton1Click:Connect(function()
+    WaypointsTabBtn.BackgroundColor3 = Theme.Accent; WaypointsTabBtn.TextColor3 = Theme.Text
+    CheatsTabBtn.BackgroundColor3 = Theme.ToggleOff; CheatsTabBtn.TextColor3 = Theme.TextDark
+    AccountTabBtn.BackgroundColor3 = Theme.ToggleOff; AccountTabBtn.TextColor3 = Theme.TextDark
+    WaypointsFrame.Visible = true; ScrollingFrame.Visible = false; AccountFrame.Visible = false
 end)
 
 AccountTabBtn.MouseButton1Click:Connect(function()
-    AccountTabBtn.BackgroundColor3 = Theme.Accent
-    AccountTabBtn.TextColor3 = Theme.Text
-    CheatsTabBtn.BackgroundColor3 = Theme.ToggleOff
-    CheatsTabBtn.TextColor3 = Theme.TextDark
-    AccountFrame.Visible = true
-    ScrollingFrame.Visible = false
+    AccountTabBtn.BackgroundColor3 = Theme.Accent; AccountTabBtn.TextColor3 = Theme.Text
+    CheatsTabBtn.BackgroundColor3 = Theme.ToggleOff; CheatsTabBtn.TextColor3 = Theme.TextDark
+    WaypointsTabBtn.BackgroundColor3 = Theme.ToggleOff; WaypointsTabBtn.TextColor3 = Theme.TextDark
+    AccountFrame.Visible = true; ScrollingFrame.Visible = false; WaypointsFrame.Visible = false
 end)
 
-local UIListLayout = Instance.new("UIListLayout")
-UIListLayout.Parent = ScrollingFrame
+local UIListLayout = Instance.new("UIListLayout", ScrollingFrame)
 UIListLayout.Padding = UDim.new(0, 6)
 UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-
 UIListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
     ScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, UIListLayout.AbsoluteContentSize.Y + 20)
 end)
@@ -276,11 +330,8 @@ local function createButton(parent, name, layoutOrder)
 end
 
 local function setToggleState(button, state)
-    if state then
-        tweenColor(button, "BackgroundColor3", Theme.ToggleOn, 0.2)
-    else
-        tweenColor(button, "BackgroundColor3", Theme.ToggleOff, 0.2)
-    end
+    if state then tweenColor(button, "BackgroundColor3", Theme.ToggleOn, 0.2)
+    else tweenColor(button, "BackgroundColor3", Theme.ToggleOff, 0.2) end
 end
 
 local function createLabel(parent, text, layoutOrder)
@@ -303,7 +354,6 @@ local function createTextBox(parent, placeholder, layoutOrder)
     row.Size = UDim2.new(1, -14, 0, 28)
     row.BackgroundTransparency = 1
     row.LayoutOrder = layoutOrder
-    
     local box = Instance.new("TextBox")
     box.Parent = row
     box.Size = UDim2.new(1, 0, 1, 0)
@@ -328,6 +378,103 @@ local function createSeparator(parent, layoutOrder)
     line.LayoutOrder = layoutOrder
     return line
 end
+
+local function safeFlyTeleport(targetCFrame)
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp or isTeleporting then return end
+
+    isTeleporting = true
+    local startPos = hrp.Position
+    local endPos = targetCFrame.Position
+    local distance = (endPos - startPos).Magnitude
+    local speed = 250
+    local duration = distance / speed
+
+    local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear)
+    local tween = TweenService:Create(hrp, tweenInfo, {CFrame = targetCFrame})
+    
+    local oldNoclip = Noclipping
+    Noclipping = true
+    
+    tween:Play()
+    tween.Completed:Connect(function()
+        Noclipping = oldNoclip
+        isTeleporting = false
+    end)
+end
+
+local WaypointNameBox, WaypointNameRow = createTextBox(WaypointsFrame, "Название точки...", 1)
+local AddWaypointBtn = createButton(WaypointsFrame, "СОХРАНИТЬ ТОЧКУ", 2)
+createSeparator(WaypointsFrame, 3)
+
+local WaypointListContainer = Instance.new("Frame")
+WaypointListContainer.Parent = WaypointsFrame
+WaypointListContainer.Size = UDim2.new(1, -14, 0, 180)
+WaypointListContainer.BackgroundTransparency = 1
+WaypointListContainer.LayoutOrder = 4
+
+local WaypointListLayout = Instance.new("UIListLayout", WaypointListContainer)
+WaypointListLayout.Padding = UDim.new(0, 4)
+
+local function refreshWaypoints()
+    for _, child in ipairs(WaypointListContainer:GetChildren()) do
+        if child:IsA("Frame") then child:Destroy() end
+    end
+    
+    for name, cframe in pairs(waypoints) do
+        local item = Instance.new("Frame")
+        item.Size = UDim2.new(1, 0, 0, 30)
+        item.BackgroundColor3 = Color3.fromRGB(35, 25, 50)
+        item.Parent = WaypointListContainer
+        Instance.new("UICorner", item).CornerRadius = UDim.new(0, 6)
+
+        local label = Instance.new("TextLabel", item)
+        label.Size = UDim2.new(0.5, 0, 1, 0)
+        label.Position = UDim2.new(0, 8, 0, 0)
+        label.BackgroundTransparency = 1
+        label.Text = name
+        label.TextColor3 = Theme.Text
+        label.Font = Enum.Font.SourceSansBold
+        label.TextSize = 12
+        label.TextXAlignment = Enum.TextXAlignment.Left
+
+        local tpBtn = Instance.new("TextButton", item)
+        tpBtn.Size = UDim2.new(0, 45, 0, 22)
+        tpBtn.Position = UDim2.new(1, -95, 0, 4)
+        tpBtn.BackgroundColor3 = Theme.Accent
+        tpBtn.TextColor3 = Theme.Text
+        tpBtn.Text = "ТП"
+        tpBtn.Font = Enum.Font.SourceSansBold
+        tpBtn.TextSize = 11
+        Instance.new("UICorner", tpBtn).CornerRadius = UDim.new(0, 4)
+        tpBtn.MouseButton1Click:Connect(function() safeFlyTeleport(cframe) end)
+
+        local delBtn = Instance.new("TextButton", item)
+        delBtn.Size = UDim2.new(0, 40, 0, 22)
+        delBtn.Position = UDim2.new(1, -45, 0, 4)
+        delBtn.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
+        delBtn.TextColor3 = Theme.Text
+        delBtn.Text = "X"
+        delBtn.Font = Enum.Font.SourceSansBold
+        delBtn.TextSize = 11
+        Instance.new("UICorner", delBtn).CornerRadius = UDim.new(0, 4)
+        delBtn.MouseButton1Click:Connect(function()
+            waypoints[name] = nil
+            refreshWaypoints()
+        end)
+    end
+end
+
+AddWaypointBtn.MouseButton1Click:Connect(function()
+    local name = WaypointNameBox.Text:gsub("%s+", "")
+    if name ~= "" and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        waypoints[name] = LocalPlayer.Character.HumanoidRootPart.CFrame
+        WaypointNameBox.Text = ""
+        refreshWaypoints()
+    end
+end)
 
 local FlyControls = Instance.new("Frame")
 FlyControls.Size = UDim2.new(0, 55, 0, 110)
@@ -373,17 +520,20 @@ end
 local function startFly()
     Flying = true
     FlyControls.Visible = true
-    local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-    local humanoid = character:WaitForChild("Humanoid")
-    local hrp = character:WaitForChild("HumanoidRootPart")
-    
+    if FlyConnection then FlyConnection:Disconnect() end
     FlyConnection = RunService.RenderStepped:Connect(function()
         if not Flying then return end
-        humanoid.PlatformStand = true
-        local moveDirection = getMobileMoveDirection() * 50
-        local vertical = 0
-        if goUp then vertical = 40 elseif goDown then vertical = -40 end
-        hrp.Velocity = Vector3.new(moveDirection.X, vertical, moveDirection.Z)
+        local character = LocalPlayer.Character
+        if not character then return end
+        local humanoid = character:FindFirstChild("Humanoid")
+        local hrp = character:FindFirstChild("HumanoidRootPart")
+        if humanoid and hrp then
+            humanoid.PlatformStand = true
+            local moveDirection = getMobileMoveDirection() * 50
+            local vertical = 0
+            if goUp then vertical = 40 elseif goDown then vertical = -40 end
+            hrp.Velocity = Vector3.new(moveDirection.X, vertical, moveDirection.Z)
+        end
     end)
 end
 
@@ -398,22 +548,23 @@ end
 
 local function startFlyV2()
     FlyV2Enabled = true
-    local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-    local humanoid = character:WaitForChild("Humanoid")
-    local hrp = character:WaitForChild("HumanoidRootPart")
-    
-    local function getIYDirection()
-        local dir = getMobileMoveDirection()
-        if dir.Magnitude == 0 then return Vector3.zero end
-        local camCFrame = Camera.CFrame
-        return (camCFrame.RightVector * (dir.X) + camCFrame.LookVector * (-dir.Z)).Unit
-    end
-
+    if FlyV2Connection then FlyV2Connection:Disconnect() end
     FlyV2Connection = RunService.RenderStepped:Connect(function()
         if not FlyV2Enabled then return end
-        humanoid.PlatformStand = true
-        local flyDir = getIYDirection()
-        hrp.Velocity = flyDir * flyV2Speed
+        local character = LocalPlayer.Character
+        if not character then return end
+        local humanoid = character:FindFirstChild("Humanoid")
+        local hrp = character:FindFirstChild("HumanoidRootPart")
+        if humanoid and hrp then
+            humanoid.PlatformStand = true
+            local dir = getMobileMoveDirection()
+            local flyDir = Vector3.zero
+            if dir.Magnitude > 0 then
+                local camCFrame = Camera.CFrame
+                flyDir = (camCFrame.RightVector * (dir.X) + camCFrame.LookVector * (-dir.Z)).Unit
+            end
+            hrp.Velocity = flyDir * flyV2Speed
+        end
     end)
 end
 
@@ -442,30 +593,19 @@ local ServerHopButton = createButton(ScrollingFrame, "SERVER HOP", 14)
 
 local CustomTitle = createLabel(ScrollingFrame, "--- Настройки Модов ---", 15)
 CustomTitle.TextColor3 = Theme.AccentLight
-
 createSeparator(ScrollingFrame, 16)
 
 local SpeedLabel = createLabel(ScrollingFrame, "Скорость: 16", 17)
 local SpeedBox, SpeedRow = createTextBox(ScrollingFrame, "WalkSpeed", 18)
-
 createSeparator(ScrollingFrame, 19)
 
 local GravityLabel = createLabel(ScrollingFrame, "Гравитация: 196.2", 20)
 local GravityBox, GravityRow = createTextBox(ScrollingFrame, "Гравитация", 21)
-
 createSeparator(ScrollingFrame, 22)
 
 local SpinSpeedLabel = createLabel(ScrollingFrame, "Настройка вращения:", 23)
 local SpinSpeedBox, SpinRow = createTextBox(ScrollingFrame, "Скорость вращения", 24)
-
 createSeparator(ScrollingFrame, 25)
-
-local ChatSpooferTitle = createLabel(ScrollingFrame, "Функция Чат Спуфа:", 26)
-local ChatSpooferNameBox, ChatSpooferNameRow = createTextBox(ScrollingFrame, "Никнейм для спуфа", 27)
-local ChatSpooferMsgBox, ChatSpooferMsgRow = createTextBox(ScrollingFrame, "Текст сообщения", 28)
-local ChatSpooferSendButton = createButton(ScrollingFrame, "ОТПРАВИТЬ СПУФ", 29)
-
-createSeparator(ScrollingFrame, 30)
 
 local TPPlayerList = Instance.new("ScrollingFrame")
 TPPlayerList.Parent = ScrollingFrame
@@ -473,12 +613,15 @@ TPPlayerList.Size = UDim2.new(1, -14, 0, 90)
 TPPlayerList.BackgroundTransparency = 0.5
 TPPlayerList.BackgroundColor3 = Color3.fromRGB(15, 10, 25)
 TPPlayerList.BorderSizePixel = 0
-TPPlayerList.LayoutOrder = 31
+TPPlayerList.LayoutOrder = 26
+
 local TPPlayerListLayout = Instance.new("UIListLayout", TPPlayerList)
 TPPlayerListLayout.Padding = UDim.new(0, 4)
 
 local function updateTPPlayerList()
-    for _, child in ipairs(TPPlayerList:GetChildren()) do if child:IsA("TextButton") then child:Destroy() end end
+    for _, child in ipairs(TPPlayerList:GetChildren()) do
+        if child:IsA("TextButton") then child:Destroy() end
+    end
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer then
             local pBtn = Instance.new("TextButton", TPPlayerList)
@@ -490,8 +633,8 @@ local function updateTPPlayerList()
             pBtn.TextSize = 12
             Instance.new("UICorner", pBtn).CornerRadius = UDim.new(0, 4)
             pBtn.MouseButton1Click:Connect(function()
-                if player.Character and player.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                    LocalPlayer.Character.HumanoidRootPart.CFrame = player.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, -3)
+                if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                    safeFlyTeleport(player.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, -3))
                 end
             end)
         end
@@ -507,8 +650,8 @@ AvatarImage.Size = UDim2.new(0, 80, 0, 80)
 AvatarImage.BackgroundColor3 = Theme.FrameBg
 AvatarImage.BorderSizePixel = 0
 AvatarImage.LayoutOrder = 3
-local AvatarCorner = Instance.new("UICorner", AvatarImage)
-AvatarCorner.CornerRadius = UDim.new(0, 10)
+Instance.new("UICorner", AvatarImage).CornerRadius = UDim.new(0, 10)
+
 local AvatarStroke = Instance.new("UIStroke", AvatarImage)
 AvatarStroke.Color = Theme.Accent
 AvatarStroke.Thickness = 1.5
@@ -518,6 +661,7 @@ NameContainer.Parent = AccountFrame
 NameContainer.Size = UDim2.new(1, -14, 0, 24)
 NameContainer.BackgroundTransparency = 1
 NameContainer.LayoutOrder = 4
+
 local NameContainerLayout = Instance.new("UIListLayout", NameContainer)
 NameContainerLayout.FillDirection = Enum.FillDirection.Horizontal
 NameContainerLayout.VerticalAlignment = Enum.VerticalAlignment.Center
@@ -539,12 +683,10 @@ OwnerBadge.Text = "Owner"
 OwnerBadge.Font = Enum.Font.SourceSansBold
 OwnerBadge.TextSize = 11
 OwnerBadge.Visible = false
-local BadgeCorner = Instance.new("UICorner", OwnerBadge)
-BadgeCorner.CornerRadius = UDim.new(1, 0)
+Instance.new("UICorner", OwnerBadge).CornerRadius = UDim.new(1, 0)
 
 local DisplayNameLabel = createLabel(AccountFrame, "Display Name: N/A", 5)
 local AccountAgeLabel = createLabel(AccountFrame, "Возраст аккаунта: N/A дней", 6)
-
 createSeparator(AccountFrame, 7)
 
 local JoinTargetButton = createButton(AccountFrame, "ЗАЙТИ НА СЕРВЕР К ИГРОКУ", 8)
@@ -556,7 +698,6 @@ local function updateAccountInfoPanel(userId, username, displayName)
     currentTargetUserId = userId
     UsernameLabel.Text = "@" .. username
     DisplayNameLabel.Text = "Display Name: " .. displayName
-    
     local ageText = "N/A дней"
     pcall(function()
         if userId == LocalPlayer.UserId then
@@ -571,21 +712,15 @@ local function updateAccountInfoPanel(userId, username, displayName)
         end
     end)
     AccountAgeLabel.Text = "Возраст аккаунта: " .. ageText
-    
     if username == "LaVaccaSatty" or username == "ITZ_BECON061" then
         OwnerBadge.Visible = true
     else
         OwnerBadge.Visible = false
     end
-    
     local success, content = pcall(function()
         return Players:GetUserThumbnailAsync(userId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100)
     end)
-    if success then
-        AvatarImage.Image = content
-    else
-        AvatarImage.Image = "rbxassetid://0"
-    end
+    if success then AvatarImage.Image = content else AvatarImage.Image = "rbxassetid://0" end
 end
 
 SearchBox.FocusLost:Connect(function()
@@ -594,23 +729,15 @@ SearchBox.FocusLost:Connect(function()
         updateAccountInfoPanel(LocalPlayer.UserId, LocalPlayer.Name, LocalPlayer.DisplayName)
         return
     end
-    
     local serverPlayer = nil
     for _, p in ipairs(Players:GetPlayers()) do
-        if p.Name:lower() == text:lower() then
-            serverPlayer = p
-            break
-        end
+        if p.Name:lower() == text:lower() then serverPlayer = p; break end
     end
-    
     if serverPlayer then
         updateAccountInfoPanel(serverPlayer.UserId, serverPlayer.Name, serverPlayer.DisplayName)
     else
         task.spawn(function()
-            local success, userId = pcall(function()
-                return Players:GetUserIdFromNameAsync(text)
-            end)
-            
+            local success, userId = pcall(function() return Players:GetUserIdFromNameAsync(text) end)
             if success and userId then
                 local nameSuccess, targetName = pcall(function() return Players:GetNameFromUserIdAsync(userId) end)
                 updateAccountInfoPanel(userId, targetName or text, targetName or text)
@@ -625,13 +752,9 @@ end)
 
 JoinTargetButton.MouseButton1Click:Connect(function()
     if currentTargetUserId == LocalPlayer.UserId then return end
-    
     local targetOnServer = Players:GetPlayerByUserId(currentTargetUserId)
     if targetOnServer and targetOnServer.Character and targetOnServer.Character:FindFirstChild("HumanoidRootPart") then
-        local myHrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-        if myHrp then
-            myHrp.CFrame = targetOnServer.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, -3)
-        end
+        safeFlyTeleport(targetOnServer.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, -3))
     else
         pcall(function()
             TeleportService:TeleportUserToServer(game.PlaceId, currentTargetUserId)
@@ -654,6 +777,7 @@ end)
 NoclipButton.MouseButton1Click:Connect(function()
     Noclipping = not Noclipping; setToggleState(NoclipButton, Noclipping)
     if Noclipping then
+        if NoclipConnection then NoclipConnection:Disconnect() end
         NoclipConnection = RunService.Stepped:Connect(function()
             if not Noclipping then return end
             if LocalPlayer.Character then
@@ -675,25 +799,26 @@ end)
 JumpButton.MouseButton1Click:Connect(function()
     JumpEnabled = not JumpEnabled; setToggleState(JumpButton, JumpEnabled)
     if JumpEnabled then
+        if JumpConnection then JumpConnection:Disconnect() end
         JumpConnection = UserInputService.JumpRequest:Connect(function()
             local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
             if hrp then hrp.Velocity = Vector3.new(hrp.Velocity.X, 50, hrp.Velocity.Z) end
         end)
-    else if JumpConnection then JumpConnection:Disconnect() end end
+    else
+        if JumpConnection then JumpConnection:Disconnect() end
+    end
 end)
 
-local currentSpinSpeed = 10
 SpinButton.MouseButton1Click:Connect(function()
     SpinEnabled = not SpinEnabled; setToggleState(SpinButton, SpinEnabled)
     if SpinEnabled then
+        if SpinConnection then SpinConnection:Disconnect() end
         SpinConnection = RunService.RenderStepped:Connect(function()
             local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-            if hrp then 
-                hrp.CFrame = hrp.CFrame * CFrame.Angles(0, math.rad(currentSpinSpeed), 0) 
-            end
+            if hrp then hrp.CFrame = hrp.CFrame * CFrame.Angles(0, math.rad(currentSpinSpeed), 0) end
         end)
-    else 
-        if SpinConnection then SpinConnection:Disconnect(); SpinConnection = nil end 
+    else
+        if SpinConnection then SpinConnection:Disconnect(); SpinConnection = nil end
     end
 end)
 
@@ -701,8 +826,6 @@ SpinSpeedBox.FocusLost:Connect(function()
     currentSpinSpeed = tonumber(SpinSpeedBox.Text) or 10
 end)
 
-local ringVisualRadius = 10
-local ringVisualSpeed = 5
 RingVisualButton.MouseButton1Click:Connect(function()
     RingVisualEnabled = not RingVisualEnabled; setToggleState(RingVisualButton, RingVisualEnabled)
     if RingVisualEnabled then
@@ -715,6 +838,7 @@ RingVisualButton.MouseButton1Click:Connect(function()
                 count = count + 1
             end
         end
+        if RingVisualConnection then RingVisualConnection:Disconnect() end
         RingVisualConnection = RunService.Heartbeat:Connect(function()
             local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
             if not hrp then return end
@@ -728,7 +852,9 @@ RingVisualButton.MouseButton1Click:Connect(function()
                 end
             end
         end)
-    else if RingVisualConnection then RingVisualConnection:Disconnect() end end
+    else
+        if RingVisualConnection then RingVisualConnection:Disconnect() end
+    end
 end)
 
 RingPartsButton.MouseButton1Click:Connect(function()
@@ -739,6 +865,7 @@ RingPartsButton.MouseButton1Click:Connect(function()
         part.Anchored = true; part.CanCollide = false; part.Transparency = 1
         ringPartsData.attachment = Instance.new("Attachment", part)
         local sethp = shiddenproperty or set_hidden_property or sethiddenproperty
+        if RingPartsConnection then RingPartsConnection:Disconnect() end
         RingPartsConnection = RunService.Heartbeat:Connect(function()
             local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
             if hrp and ringPartsData.attachment then
@@ -761,29 +888,23 @@ RingPartsButton.MouseButton1Click:Connect(function()
     end
 end)
 
-local aimbotFOV = 120
-local aimbotSmoothness = 0.25
 AimbotButton.MouseButton1Click:Connect(function()
     AimbotEnabled = not AimbotEnabled; setToggleState(AimbotButton, AimbotEnabled)
     if AimbotEnabled then
+        if AimbotConnection then AimbotConnection:Disconnect() end
         AimbotConnection = RunService.RenderStepped:Connect(function()
             local target, closest = nil, aimbotFOV
             local centerScreen = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-            
             for _, p in ipairs(Players:GetPlayers()) do
                 if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("Head") and p.Character:FindFirstChildOfClass("Humanoid") and p.Character:FindFirstChildOfClass("Humanoid").Health > 0 then
                     local head = p.Character.Head
                     local pos, onScreen = Camera:WorldToViewportPoint(head.Position)
                     if onScreen then
                         local dist = (Vector2.new(pos.X, pos.Y) - centerScreen).Magnitude
-                        if dist < closest then
-                            closest = dist
-                            target = head
-                        end
+                        if dist < closest then closest = dist target = head end
                     end
                 end
             end
-            
             if target then
                 local targetCFrame = CFrame.lookAt(Camera.CFrame.Position, target.Position)
                 Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, aimbotSmoothness)
@@ -796,7 +917,6 @@ end)
 
 local function setupESP(player)
     if player == LocalPlayer then return end
-    
     local function applyESP()
         if not ESPEnabled then return end
         if player.Character then
@@ -806,7 +926,6 @@ local function setupESP(player)
             espObjects[player] = hl
         end
     end
-
     applyESP()
     if espConnections[player] then espConnections[player]:Disconnect() end
     espConnections[player] = player.CharacterAdded:Connect(applyESP)
@@ -815,18 +934,13 @@ end
 ESPButton.MouseButton1Click:Connect(function()
     ESPEnabled = not ESPEnabled; setToggleState(ESPButton, ESPEnabled)
     if ESPEnabled then
-        for _, p in ipairs(Players:GetPlayers()) do
-            setupESP(p)
-        end
+        for _, p in ipairs(Players:GetPlayers()) do setupESP(p) end
     else
         for _, hl in pairs(espObjects) do if hl then hl:Destroy() end end; table.clear(espObjects)
     end
 end)
 
-Players.PlayerAdded:Connect(function(p)
-    if ESPEnabled then setupESP(p) end
-end)
-
+Players.PlayerAdded:Connect(function(p) if ESPEnabled then setupESP(p) end end)
 Players.PlayerRemoving:Connect(function(p)
     if espConnections[p] then espConnections[p]:Disconnect(); espConnections[p] = nil end
     if espObjects[p] then espObjects[p]:Destroy(); espObjects[p] = nil end
@@ -835,6 +949,7 @@ end)
 ESPV2Button.MouseButton1Click:Connect(function()
     ESPV2Enabled = not ESPV2Enabled; setToggleState(ESPV2Button, ESPV2Enabled)
     if ESPV2Enabled then
+        if ESPV2Connection then ESPV2Connection:Disconnect() end
         ESPV2Connection = RunService.RenderStepped:Connect(function()
             local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
             for _, player in ipairs(Players:GetPlayers()) do
@@ -853,7 +968,9 @@ ESPV2Button.MouseButton1Click:Connect(function()
     else
         if ESPV2Connection then ESPV2Connection:Disconnect() end
         for _, p in ipairs(Players:GetPlayers()) do
-            if p.Character and p.Character:FindFirstChild("Head") and p.Character.Head:FindFirstChild("MobileESP") then p.Character.Head.MobileESP:Destroy() end
+            if p.Character and p.Character:FindFirstChild("Head") and p.Character.Head:FindFirstChild("MobileESP") then
+                p.Character.Head.MobileESP:Destroy()
+            end
         end
     end
 end)
@@ -861,17 +978,21 @@ end)
 AntiAFKButton.MouseButton1Click:Connect(function()
     AntiAFKEnabled = not AntiAFKEnabled; setToggleState(AntiAFKButton, AntiAFKEnabled)
     if AntiAFKEnabled then
+        if AntiAFKConnection then AntiAFKConnection:Disconnect() end
         AntiAFKConnection = LocalPlayer.Idled:Connect(function()
             local vu = game:GetService("VirtualUser")
             vu:CaptureController(); vu:ClickButton2(Vector2.new())
         end)
-    else if AntiAFKConnection then AntiAFKConnection:Disconnect() end end
+    else
+        if AntiAFKConnection then AntiAFKConnection:Disconnect() end
+    end
 end)
 
 FreecamButton.MouseButton1Click:Connect(function()
     FreecamEnabled = not FreecamEnabled; setToggleState(FreecamButton, FreecamEnabled)
     if FreecamEnabled then
         Camera.CameraType = Enum.CameraType.Scriptable
+        if FreecamConnection then FreecamConnection:Disconnect() end
         FreecamConnection = RunService.RenderStepped:Connect(function()
             Camera.CFrame = Camera.CFrame + getMobileMoveDirection() * 2
         end)
@@ -879,13 +1000,6 @@ FreecamButton.MouseButton1Click:Connect(function()
         if FreecamConnection then FreecamConnection:Disconnect() end
         Camera.CameraType = Enum.CameraType.Custom
         Camera.CameraSubject = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
-    end
-end)
-
-ChatSpooferSendButton.MouseButton1Click:Connect(function()
-    local target, msg = ChatSpooferNameBox.Text, ChatSpooferMsgBox.Text
-    if target ~= "" and msg ~= "" then
-        StarterGui:SetCore("ChatMakeSystemMessage", {Text = "[" .. target .. "]: " .. msg, Color = Theme.Text, Font = Enum.Font.SourceSansBold, FontSize = Enum.FontSize.Size18})
     end
 end)
 
@@ -899,45 +1013,50 @@ InvisibleButton.MouseButton1Click:Connect(function()
 end)
 
 ServerHopButton.MouseButton1Click:Connect(function()
-    local success, result = pcall(function() return HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?limit=50")) end)
+    local success, result = pcall(function()
+        return HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?limit=50"))
+    end)
     if success and result and result.data then
         for _, s in ipairs(result.data) do
-            if s.playing < s.maxPlayers and s.id ~= game.JobId then TeleportService:TeleportToPlaceInstance(game.PlaceId, s.id, LocalPlayer); break end
+            if s.playing < s.maxPlayers and s.id ~= game.JobId then
+                TeleportService:TeleportToPlaceInstance(game.PlaceId, s.id, LocalPlayer); break
+            end
         end
     end
 end)
 
 SpeedBox.FocusLost:Connect(function()
     local val = tonumber(SpeedBox.Text) or 16; SpeedLabel.Text = "Скорость: " .. val
-    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then LocalPlayer.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = val end
+    currentSpeed = val
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+        LocalPlayer.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = val
+    end
 end)
 
 GravityBox.FocusLost:Connect(function()
-    local val = tonumber(GravityBox.Text) or 196.2; GravityLabel.Text = "Гравитация: " .. val; Workspace.Gravity = val
+    local val = tonumber(GravityBox.Text) or 196.2; GravityLabel.Text = "Гравитация: " .. val; currentGravity = val
+    Workspace.Gravity = val
 end)
 
-local menuAnimating = false
-DragButton.MouseButton1Click:Connect(function()
-    if menuAnimating then return end
-    menuAnimating = true
-    
-    if not MainGui.Enabled then
-        MainGui.Enabled = true
-        MainFrame.Size = UDim2.new(0, 260, 0, 0)
-        updateTPPlayerList()
-        
-        local openTween = TweenService:Create(MainFrame, TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = UDim2.new(0, 260, 0, 320)})
-        openTween.Completed:Connect(function() menuAnimating = false end)
-        openTween:Play()
-    else
-        local closeTween = TweenService:Create(MainFrame, TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {Size = UDim2.new(0, 260, 0, 0)})
-        closeTween.Completed:Connect(function()
-            MainGui.Enabled = false
-            menuAnimating = false
-        end)
-        closeTween:Play()
+LocalPlayer.CharacterAdded:Connect(function(char)
+    char:WaitForChild("Humanoid"); char:WaitForChild("HumanoidRootPart")
+    task.wait(0.5)
+    if currentSpeed ~= 16 and char:FindFirstChildOfClass("Humanoid") then
+        char:FindFirstChildOfClass("Humanoid").WalkSpeed = currentSpeed
+    end
+    if currentGravity ~= 196.2 then Workspace.Gravity = currentGravity end
+    if Flying then startFly() end
+    if FlyV2Enabled then startFlyV2() end
+    if ESPEnabled then for _, p in ipairs(Players:GetPlayers()) do setupESP(p) end end
+    if InvisibleEnabled then
+        for _, p in ipairs(char:GetDescendants()) do
+            if p:IsA("BasePart") or p:IsA("Decal") then p.Transparency = 1 end
+        end
     end
 end)
 
 Players.PlayerAdded:Connect(updateTPPlayerList)
 Players.PlayerRemoving:Connect(updateTPPlayerList)
+
+-- Открываем меню с анимацией при инжекте
+toggleMenu()
