@@ -1,0 +1,788 @@
+local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local CoreGui = game:GetService("CoreGui")
+
+local player = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+
+local finalBg = "" 
+
+local RAM_SOURCE = [==[local Players = game:GetService("Players") local ReplicatedStorage = game:GetService("ReplicatedStorage") local ContextActionService = game:GetService("ContextActionService") local RunService = game:GetService("RunService") local Workspace = game:GetService("Workspace") local Player = Players.LocalPlayer local Vehicles = Workspace:WaitForChild("Vehicles") local VehicleUtil = require(ReplicatedStorage.SharedModules.VehicleUtil) local RequestPitRemote = ReplicatedStorage:WaitForChild("__remotes"):WaitForChild("VehicleService"):WaitForChild("RequestPitManeuver") local env = (getgenv and getgenv()) or _G local ACTION_NAME = "__VehiclePhysRamV9" for _, name in ipairs({"VehicleLaunchCleanup", "VehicleRamV7Cleanup", "VehiclePhysRamCleanup", "VehicleRamHammerCleanup", "VehiclePitRamCleanup"}) do if type(env[name]) == "function" then pcall(env[name]) end end local CONFIG = { MaxTargetDistance = 150, RamSpeed = 2000, MassMultiplier = 100000, SpinSpeed = 55, RepositionDistance = 16, RearGap = 2, PitInterval = 1.05, SimulationRadius = 5000, ReturnLift = 3.5, LiftFrames = 10, ExactFrames = 60, SettleFrames = 12 } local running = true local attacking = false local restoring = false local ownVehicle, ownRoot local targetVehicle, targetRoot local savedState local savedRootProps local attackConnection local pitTimer = 0 local attackSide = 1 local didInitialPlace = false local function boostSimulation() pcall(function() if type(setsimulationradius) == "function" then setsimulationradius(CONFIG.SimulationRadius, CONFIG.SimulationRadius) elseif type(sethiddenproperty) == "function" then sethiddenproperty(Player, "SimulationRadius", CONFIG.SimulationRadius) sethiddenproperty(Player, "MaximumSimulationRadius", CONFIG.SimulationRadius) end end) end local function getDrivenVehicle() local character = Player.Character local humanoid = character and character:FindFirstChildOfClass("Humanoid") if not humanoid then return nil, nil end local vehicle = VehicleUtil:GetHumanoidDrivenVehicle(humanoid) if not vehicle then return nil, nil end return vehicle, VehicleUtil:GetVehicleRoot(vehicle) end local function findNearestVehicle(sourceVehicle, sourceRoot) local bestVehicle, bestRoot local bestDistance = CONFIG.MaxTargetDistance for _, vehicle in ipairs(Vehicles:GetChildren()) do if vehicle:IsA("Model") and vehicle ~= sourceVehicle then local root = VehicleUtil:GetVehicleRoot(vehicle) if root then local distance = (root.Position - sourceRoot.Position).Magnitude if distance < bestDistance then bestDistance = distance bestVehicle = vehicle bestRoot = root end end end end return bestVehicle, bestRoot end local function isTargetOccupied(vehicle) local occupants = VehicleUtil:GetOccupantCharactersOfVehicle(vehicle) if type(occupants) == "table" then return next(occupants) ~= nil end return occupants ~= nil end local function createSavedState(vehicle, root) local pivot = vehicle:GetPivot() local state = { Vehicle = vehicle, Root = root, Pivot = pivot, Parts = {} } for _, object in ipairs(vehicle:GetDescendants()) do if object:IsA("BasePart") then state.Parts[object] = { LocalCFrame = pivot:ToObjectSpace(object.CFrame), CanCollide = object.CanCollide, CanTouch = object.CanTouch, CanQuery = object.CanQuery, Massless = object.Massless, CustomPhysicalProperties = object.CustomPhysicalProperties } end end return state end local function zeroPart(part) part.AssemblyLinearVelocity = Vector3.zero part.AssemblyAngularVelocity = Vector3.zero end local function setCollision(state, enabled) for part, properties in pairs(state.Parts) do if part and part.Parent then pcall(function() if enabled then part.CanCollide = properties.CanCollide part.CanTouch = properties.CanTouch part.CanQuery = properties.CanQuery part.Massless = properties.Massless part.CustomPhysicalProperties = properties.CustomPhysicalProperties else part.CanCollide = false part.CanTouch = false end end) end end end local function placeSavedState(state, pivot) if not state.Vehicle or not state.Vehicle.Parent then return false end pcall(function() state.Vehicle:PivotTo(pivot) end) for part, properties in pairs(state.Parts) do if part and part.Parent then pcall(function() part.CFrame = pivot * properties.LocalCFrame zeroPart(part) end) end end return true end local function inflateMass(root) savedRootProps = root.CustomPhysicalProperties local current = root.CurrentPhysicalProperties local baseDensity = current and current.Density or 1 pcall(function() root.Massless = false root.CustomPhysicalProperties = PhysicalProperties.new(baseDensity * CONFIG.MassMultiplier, 0.3, 0, 100, 100) end) end local function restoreMass(root) if root and root.Parent then pcall(function() root.CustomPhysicalProperties = savedRootProps end) end savedRootProps = nil end local function sendPitRequest() if not ownVehicle or not targetVehicle or not RequestPitRemote then return end pcall(function() RequestPitRemote:FireServer(ownVehicle, targetVehicle) end) end local function computeApproachCFrame() local look = targetRoot.CFrame.LookVector local right = targetRoot.CFrame.RightVector local up = targetRoot.CFrame.UpVector local size = targetRoot.Size local contact = targetRoot.Position - look * (size.Z * 0.5 * 0.85) + right * attackSide * (size.X * 0.5) local position = contact - look * (ownRoot.Size.Z * 0.5 + CONFIG.RearGap) return CFrame.lookAt(position, position + look, up) end local function updateRam(deltaTime) if not attacking then return end if not ownVehicle or not ownVehicle.Parent or not ownRoot or not ownRoot.Parent or not targetVehicle or not targetVehicle.Parent or not targetRoot or not targetRoot.Parent then return end if not didInitialPlace then pcall(function() ownVehicle:PivotTo(computeApproachCFrame()) end) didInitialPlace = true end local distance = (ownRoot.Position - targetRoot.Position).Magnitude local reach = targetRoot.Size.Z * 0.5 + ownRoot.Size.Z * 0.5 if distance > reach + CONFIG.RepositionDistance then pcall(function() ownVehicle:PivotTo(computeApproachCFrame()) end) end local aim = targetRoot.Position - targetRoot.CFrame.LookVector * (targetRoot.Size.Z * 0.5 * 0.85) + targetRoot.CFrame.RightVector * attackSide * (targetRoot.Size.X * 0.4) local direction = aim - ownRoot.Position direction = direction.Magnitude > 0.001 and direction.Unit or targetRoot.CFrame.LookVector pcall(function() ownRoot.AssemblyLinearVelocity = direction * CONFIG.RamSpeed + targetRoot.AssemblyLinearVelocity ownRoot.AssemblyAngularVelocity = targetRoot.CFrame.UpVector * attackSide * CONFIG.SpinSpeed end) pitTimer = pitTimer + deltaTime if pitTimer >= CONFIG.PitInterval then pitTimer = 0 sendPitRequest() attackSide = -attackSide end end local function clearState() ownVehicle, ownRoot = nil, nil targetVehicle, targetRoot = nil, nil savedState = nil pitTimer = 0 didInitialPlace = false end local function restoreVehicle() if restoring or not savedState then return end restoring = true restoreMass(ownRoot) local state = savedState local exactPivot = state.Pivot local liftedPivot = CFrame.new(exactPivot.Position + Vector3.new(0, CONFIG.ReturnLift, 0)) * exactPivot.Rotation task.spawn(function() setCollision(state, false) for _ = 1, CONFIG.LiftFrames do if not placeSavedState(state, liftedPivot) then break end RunService.Heartbeat:Wait() end for _ = 1, CONFIG.ExactFrames do if not placeSavedState(state, exactPivot) then break end RunService.Heartbeat:Wait() end setCollision(state, true) for _ = 1, CONFIG.SettleFrames do if not placeSavedState(state, exactPivot) then break end RunService.Heartbeat:Wait() end restoring = false clearState() end) end local function stopAttack() if not attacking then return end attacking = false if attackConnection then attackConnection:Disconnect() attackConnection = nil end restoreVehicle() end local function startAttack() if attacking or restoring then return end boostSimulation() local vehicle, root = getDrivenVehicle() if not vehicle or not root then return end local nearest, nearestRoot = findNearestVehicle(vehicle, root) if not nearest or not nearestRoot then return end ownVehicle, ownRoot = vehicle, root targetVehicle, targetRoot = nearest, nearestRoot savedState = createSavedState(vehicle, root) didInitialPlace = false inflateMass(root) local relative = root.Position - nearestRoot.Position attackSide = relative:Dot(nearestRoot.CFrame.RightVector) < 0 and 1 or -1 pitTimer = CONFIG.PitInterval attacking = true attackConnection = RunService.PreSimulation:Connect(updateRam) end local function handleAlt(_, inputState) if inputState == Enum.UserInputState.Begin then startAttack() elseif inputState == Enum.UserInputState.End or inputState == Enum.UserInputState.Cancel then stopAttack() end return Enum.ContextActionResult.Sink end ContextActionService:BindActionAtPriority(ACTION_NAME, handleAlt, false, 9999, Enum.KeyCode.LeftAlt, Enum.KeyCode.RightAlt) task.spawn(function() while running do boostSimulation() task.wait(0.2) end end) env.VehiclePhysRamCleanup = function() if not running then return end running = false ContextActionService:UnbindAction(ACTION_NAME) stopAttack() env.VehiclePhysRamCleanup = nil end boostSimulation()]==]
+
+local COLLISION_SOURCE = [==[local Players = game:GetService("Players") local Workspace = game:GetService("Workspace") local env = (getgenv and getgenv()) or _G for _, name in ipairs({"VehicleGhostCleanup", "VehicleOnlyCollisionCleanup", "VehicleCollisionOnlyCleanup"}) do if type(env[name]) == "function" then pcall(env[name]) end end local player = Players.LocalPlayer local running = true local constraints = {} local function destroyConstraint(constraint) constraints[constraint] = nil if constraint and constraint.Parent then constraint:Destroy() end end local function clearConstraints() for constraint in pairs(constraints) do pcall(destroyConstraint, constraint) end table.clear(constraints) end local function getVehiclesFolder() return Workspace:FindFirstChild("Vehicles") end local function getCurrentVehicle() local character = player.Character local humanoid = character and character:FindFirstChildOfClass("Humanoid") local seat = humanoid and humanoid.SeatPart local vehicles = getVehiclesFolder() if not seat or not seat:IsA("VehicleSeat") or not vehicles then return nil end local object = seat while object and object.Parent ~= vehicles do object = object.Parent end if object and object.Parent == vehicles and object:IsA("Model") then return object end return nil end local function addBaseParts(container, output) if not container then return end for _, object in ipairs(container:GetDescendants()) do if object:IsA("BasePart") then table.insert(output, object) end end end local function addWheelColliders(wheels, output) if not wheels then return end for _, wheel in ipairs(wheels:GetChildren()) do local collider = wheel:FindFirstChild("Collider") if collider and collider:IsA("BasePart") then table.insert(output, collider) end end end local function getVehicleColliders(vehicle) local result = {} local body = vehicle and vehicle:FindFirstChild("Body") if not body then return result end addBaseParts(body:FindFirstChild("Colliders"), result) addWheelColliders(vehicle:FindFirstChild("Wheels"), result) local trailer = body:FindFirstChild("Trailer") if trailer then addBaseParts(trailer:FindFirstChild("Colliders"), result) addWheelColliders(trailer:FindFirstChild("Wheels"), result) end return result end local function reconcile() local vehicles = getVehiclesFolder() local ownVehicle = getCurrentVehicle() if not vehicles or not ownVehicle then clearConstraints() return end local ownParts = getVehicleColliders(ownVehicle) local desired = {} for _, otherVehicle in ipairs(vehicles:GetChildren()) do if otherVehicle:IsA("Model") and otherVehicle ~= ownVehicle then local otherParts = getVehicleColliders(otherVehicle) for _, ownPart in ipairs(ownParts) do if ownPart.Parent then local partMap = desired[ownPart] if not partMap then partMap = {} desired[ownPart] = partMap end for _, otherPart in ipairs(otherParts) do if otherPart.Parent then partMap[otherPart] = true end end end end end end for constraint in pairs(constraints) do local part0 = constraint.Part0 local part1 = constraint.Part1 local partMap = part0 and desired[part0] if not partMap or not partMap[part1] then destroyConstraint(constraint) else partMap[part1] = nil end end for ownPart, partMap in pairs(desired) do for otherPart in pairs(partMap) do local constraint = Instance.new("NoCollisionConstraint") constraint.Name = "__VehicleCollisionOnly" constraint.Part0 = ownPart constraint.Part1 = otherPart constraint.Parent = ownPart constraints[constraint] = true end end end env.VehicleCollisionOnlyCleanup = function() if not running then return end running = false clearConstraints() env.VehicleCollisionOnlyCleanup = nil end task.spawn(function() while running do pcall(reconcile) task.wait(0.25) end end)]==]
+
+local GATE_SOURCE = [==[local Players = game:GetService("Players") local Workspace = game:GetService("Workspace") local CollectionService = game:GetService("CollectionService") local env = (getgenv and getgenv()) or _G if type(env.GateBarrierCollisionCleanup) == "function" then pcall(env.GateBarrierCollisionCleanup) end local BARRIER_GROUP = "GateBarrier" local GATE_TAG = "Gate" local player = Players.LocalPlayer local running = true local constraints = {} local function destroyConstraint(constraint) constraints[constraint] = nil if constraint and constraint.Parent then constraint:Destroy() end end local function clearConstraints() for constraint in pairs(constraints) do pcall(destroyConstraint, constraint) end table.clear(constraints) end local function isBarrierPart(part) if not part:IsA("BasePart") or not part.CanCollide then return false end local ok, group = pcall(function() return part.CollisionGroup end) return ok and group == BARRIER_GROUP end local function collectBarrierParts() local parts = {} for _, gate in ipairs(CollectionService:GetTagged(GATE_TAG)) do if gate:IsDescendantOf(Workspace) then if isBarrierPart(gate) then table.insert(parts, gate) end for _, descendant in ipairs(gate:GetDescendants()) do if isBarrierPart(descendant) then table.insert(parts, descendant) end end end end if #parts == 0 then for _, object in ipairs(Workspace:GetDescendants()) do if isBarrierPart(object) then table.insert(parts, object) end end end return parts end local function getVehiclesFolder() return Workspace:FindFirstChild("Vehicles") end local function getCurrentVehicle() local character = player.Character local humanoid = character and character:FindFirstChildOfClass("Humanoid") local seat = humanoid and humanoid.SeatPart local vehicles = getVehiclesFolder() if not seat or not vehicles then return nil end local object = seat while object and object.Parent ~= vehicles do object = object.Parent end if object and object.Parent == vehicles and object:IsA("Model") then return object end return nil end local function addBaseParts(container, output) if not container then return end for _, object in ipairs(container:GetDescendants()) do if object:IsA("BasePart") then table.insert(output, object) end end end local function addWheelColliders(wheels, output) if not wheels then return end for _, wheel in ipairs(wheels:GetChildren()) do local collider = wheel:FindFirstChild("Collider") if collider and collider:IsA("BasePart") then table.insert(output, collider) end end end local function getMyParts() local parts = {} local vehicle = getCurrentVehicle() if vehicle then local body = vehicle:FindFirstChild("Body") if body then addBaseParts(body:FindFirstChild("Colliders"), parts) local trailer = body:FindFirstChild("Trailer") if trailer then addBaseParts(trailer:FindFirstChild("Colliders"), parts) addWheelColliders(trailer:FindFirstChild("Wheels"), parts) end end addWheelColliders(vehicle:FindFirstChild("Wheels"), parts) local root = vehicle.PrimaryPart or vehicle:FindFirstChild("Root") if root and root:IsA("BasePart") then table.insert(parts, root) end end local character = player.Character if character then for _, object in ipairs(character:GetDescendants()) do if object:IsA("BasePart") then table.insert(parts, object) end end end return parts end local function reconcile() local myParts = getMyParts() if #myParts == 0 then clearConstraints() return end local barrierParts = collectBarrierParts() if #barrierParts == 0 then clearConstraints() return end local desired = {} for _, myPart in ipairs(myParts) do if myPart.Parent then local partMap = desired[myPart] if not partMap then partMap = {} desired[myPart] = partMap end for _, barrierPart in ipairs(barrierParts) do if barrierPart.Parent then partMap[barrierPart] = true end end end end for constraint in pairs(constraints) do local part0 = constraint.Part0 local part1 = constraint.Part1 local partMap = part0 and desired[part0] if not partMap or not partMap[part1] then destroyConstraint(constraint) else partMap[part1] = nil end end for myPart, partMap in pairs(desired) do for barrierPart in pairs(partMap) do local constraint = Instance.new("NoCollisionConstraint") constraint.Name = "__GateBarrierPass" constraint.Part0 = myPart constraint.Part1 = barrierPart constraint.Parent = myPart constraints[constraint] = true end end end env.GateBarrierCollisionCleanup = function() if not running then return end running = false clearConstraints() env.GateBarrierCollisionCleanup = nil end task.spawn(function() while running do pcall(reconcile) task.wait(0.5) end end)]==]
+
+local NO_RECOIL_SOURCE = [==[local ReplicatedStorage = game:GetService("ReplicatedStorage") local environment = (getgenv and getgenv()) or _G if type(environment.CarunoNoRecoilCleanup) == "function" then pcall(environment.CarunoNoRecoilCleanup) end local gunConfig = require(ReplicatedStorage:WaitForChild("SharedModules"):WaitForChild("Configs"):WaitForChild("GunConfig")) local cameraController = require(ReplicatedStorage:WaitForChild("ClientModules"):WaitForChild("CameraController")) local running = true local savedStats = {} local originalImpulsePitch = cameraController.ImpulsePitch local originalGetRecoilSpring = cameraController.GetRecoilSpring local realRecoilSpring = cameraController:GetRecoilSpring() local silentRecoilSpring = setmetatable({ Impulse = function() return nil end }, { __index = realRecoilSpring, __newindex = function(_, key, value) realRecoilSpring[key] = value end }) local function clearRecoilSpring() pcall(function() realRecoilSpring.Position = 0 realRecoilSpring.Velocity = 0 realRecoilSpring.Target = 0 end) end local function patchGunStats() for _, config in pairs(gunConfig) do local stats = type(config) == "table" and config.Stats if type(stats) == "table" then if not savedStats[stats] then savedStats[stats] = { HasFirstPerson = rawget(stats, "FirstPersonCameraRecoilFactor") ~= nil, HasThirdPerson = rawget(stats, "ThirdPersonCameraRecoilFactor") ~= nil, FirstPerson = stats.FirstPersonCameraRecoilFactor, ThirdPerson = stats.ThirdPersonCameraRecoilFactor } end stats.FirstPersonCameraRecoilFactor = 0 stats.ThirdPersonCameraRecoilFactor = 0 end end clearRecoilSpring() end local patchedImpulsePitch = function() return nil end local patchedGetRecoilSpring = function() return silentRecoilSpring end cameraController.ImpulsePitch = patchedImpulsePitch cameraController.GetRecoilSpring = patchedGetRecoilSpring local function cleanup() if not running then return end running = false if cameraController.ImpulsePitch == patchedImpulsePitch then cameraController.ImpulsePitch = originalImpulsePitch end if cameraController.GetRecoilSpring == patchedGetRecoilSpring then cameraController.GetRecoilSpring = originalGetRecoilSpring end for stats, saved in pairs(savedStats) do pcall(function() if saved.HasFirstPerson then stats.FirstPersonCameraRecoilFactor = saved.FirstPerson else stats.FirstPersonCameraRecoilFactor = nil end if saved.HasThirdPerson then stats.ThirdPersonCameraRecoilFactor = saved.ThirdPerson else stats.ThirdPersonCameraRecoilFactor = nil end end) end table.clear(savedStats) clearRecoilSpring() if environment.CarunoNoRecoilCleanup == cleanup then environment.CarunoNoRecoilCleanup = nil end end environment.CarunoNoRecoilCleanup = cleanup patchGunStats() task.spawn(function() while running do patchGunStats() task.wait(0.15) end end)]==]
+
+local VehicleUtil
+do
+    pcall(function()
+        VehicleUtil = require(ReplicatedStorage:WaitForChild("SharedModules", 5):WaitForChild("VehicleUtil", 5))
+    end)
+end
+
+local values = {
+    altSpeed = 60,
+    vehicleAltSpeed = 200,
+    vehicleAltRisky = false,
+    uiWidth = isMobile and 360 or 680,
+    uiHeight = isMobile and 280 or 460,
+}
+
+local runtimeFeatures = {
+    infiniteFuel = false,
+    speedHack = false,
+    vehicleSpeed = false,
+    infiniteStamina = false,
+    mobileSpeedToggle = false,
+}
+
+local altHeld = false
+
+local function getFeatureEnvironment()
+    if type(getgenv) == "function" then
+        local success, environment = pcall(getgenv)
+        if success and type(environment) == "table" then return environment end
+    end
+    return _G
+end
+
+local function runFeatureSource(source, chunkName)
+    if type(loadstring) ~= "function" then return false, "Executor required" end
+    local chunk, compileError = loadstring(source, chunkName)
+    if not chunk then return false, compileError end
+    local success, runtimeError = pcall(chunk)
+    if not success then return false, runtimeError end
+    return true
+end
+
+local function stopFeature(cleanupName)
+    local environment = getFeatureEnvironment()
+    local cleanup = environment[cleanupName]
+    if type(cleanup) == "function" then pcall(cleanup) end
+    return true
+end
+
+local borderSpeedLimitEnabled = false
+local borderSpeedLimitConfig, borderSpeedLimitOriginalRegion, borderSpeedLimitPatchedRegion
+
+local function startBorderSpeedLimitRemoval()
+    if borderSpeedLimitEnabled then return true end
+    local configModule = ReplicatedStorage:WaitForChild("SharedModules", 5):WaitForChild("Configs", 5):WaitForChild("RegionSpeedLimits", 5)
+    local required, config = pcall(require, configModule)
+    if not required or type(config) ~= "table" or type(config.Regions) ~= "table" then return false, "Config error" end
+    local originalRegion = config.Regions.BorderSpeedLimitRegion
+    if type(originalRegion) ~= "table" then return false, "Region error" end
+    
+    local patchedRegion = {}
+    for k, v in pairs(originalRegion) do patchedRegion[k] = v end
+    patchedRegion.MaxMPH = 10000000
+    patchedRegion.BrakeTorqueMultiplier = 0
+    patchedRegion.NotificationMessageFormat = ""
+    patchedRegion.NotificationDuration = 0
+    patchedRegion.NotificationMPHOffset = 0
+    
+    config.Regions.BorderSpeedLimitRegion = patchedRegion
+    borderSpeedLimitConfig = config
+    borderSpeedLimitOriginalRegion = originalRegion
+    borderSpeedLimitPatchedRegion = patchedRegion
+    borderSpeedLimitEnabled = true
+    return true
+end
+
+local function stopBorderSpeedLimitRemoval()
+    if borderSpeedLimitConfig and borderSpeedLimitConfig.Regions.BorderSpeedLimitRegion == borderSpeedLimitPatchedRegion then
+        pcall(function() borderSpeedLimitConfig.Regions.BorderSpeedLimitRegion = borderSpeedLimitOriginalRegion end)
+    end
+    borderSpeedLimitConfig, borderSpeedLimitOriginalRegion, borderSpeedLimitPatchedRegion = nil, nil, nil
+    borderSpeedLimitEnabled = false
+    return true
+end
+
+local fuelInfoTables = setmetatable({}, { __mode = "k" })
+local lastFuelInfoScan = 0
+
+local function scanGarbageCollectedTables(callback)
+    if type(getgc) ~= "function" then return false end
+    local success, objects = pcall(getgc, true)
+    if not success or type(objects) ~= "table" then return false end
+    for _, object in ipairs(objects) do
+        if type(object) == "table" then pcall(callback, object) end
+    end
+    return true
+end
+
+local function getDrivenVehicle()
+    local character = player.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    local seat = humanoid and humanoid.SeatPart
+    local vehicles = Workspace:FindFirstChild("Vehicles")
+    if not seat or not vehicles then return nil, nil end
+    local object = seat
+    while object and object.Parent ~= vehicles do object = object.Parent end
+    if not object or object.Parent ~= vehicles or not object:IsA("Model") then return nil, nil end
+    local root = object:FindFirstChild("Root") or object.PrimaryPart or seat.AssemblyRootPart
+    return object, root
+end
+
+local function patchVehicleFuel(vehicle, root)
+    if not vehicle or not vehicle.Parent then return false end
+    local maxFuel = vehicle:GetAttribute("MaxFuel") or vehicle:GetAttribute("Fuel") or 100
+    pcall(function()
+        vehicle:SetAttribute("CurrentFuel", maxFuel)
+        vehicle:SetAttribute("Fuel", maxFuel)
+    end)
+    if lastFuelInfoScan == 0 or os.clock() - lastFuelInfoScan >= 1 then
+        lastFuelInfoScan = os.clock()
+        scanGarbageCollectedTables(function(object)
+            if type(rawget(object, "CurrentFuel")) == "number" and type(rawget(object, "MaxFuel")) == "number" and typeof(rawget(object, "Root")) == "Instance" then
+                fuelInfoTables[object] = true
+            end
+        end)
+    end
+    for object in pairs(fuelInfoTables) do
+        if rawget(object, "Root") == root then
+            object.CurrentFuel = maxFuel
+            object.MaxFuel = maxFuel
+        end
+    end
+    return true
+end
+
+local disabledPitConnections = {}
+
+local function disableSignalConnections(signal, registry)
+    local resolved = type(getconnections) == "function" and getconnections
+    if not resolved then return false end
+    local success, signalConnections = pcall(resolved, signal)
+    if not success then return false end
+    for _, connection in ipairs(signalConnections) do
+        pcall(function()
+            connection:Disable()
+            registry[connection] = true
+        end)
+    end
+    return true
+end
+
+local function enableSignalConnections(registry)
+    for connection in pairs(registry) do
+        pcall(function() connection:Enable() end)
+        registry[connection] = nil
+    end
+end
+
+local function refreshAntiPitConnections()
+    local remotes = ReplicatedStorage:FindFirstChild("__remotes")
+    local vehicleService = remotes and remotes:FindFirstChild("VehicleService")
+    local remote = vehicleService and vehicleService:FindFirstChild("VehiclePitManeuver")
+    if not remote then return false end
+    return disableSignalConnections(remote.OnClientEvent, disabledPitConnections)
+end
+
+local movementController, staminaGetter, staminaUpvalueIndex, staminaSetupValue
+
+local function resolveStaminaUpvalue()
+    if staminaGetter and staminaUpvalueIndex and staminaSetupValue then return true end
+    local success, controller = pcall(function()
+        return require(ReplicatedStorage:WaitForChild("ClientModules"):WaitForChild("MovementController"))
+    end)
+    if not success then return false end
+    local debugLibrary = debug
+    local getUpvalues = (debugLibrary and debugLibrary.getupvalues) or getupvalues
+    local setupValue = (debugLibrary and debugLibrary.setupvalue) or setupvalue
+    if type(getUpvalues) ~= "function" or type(setupValue) ~= "function" then return false end
+    local gotUpvalues, upvalues = pcall(getUpvalues, controller.GetStamina)
+    if not gotUpvalues then return false end
+    local currentStamina = controller:GetStamina()
+    for index, value in pairs(upvalues) do
+        if type(index) == "number" and type(value) == "number" and math.abs(value - currentStamina) < 0.001 then
+            movementController = controller
+            staminaGetter = controller.GetStamina
+            staminaUpvalueIndex = index
+            staminaSetupValue = setupValue
+            return true
+        end
+    end
+    return false
+end
+
+local function refillStamina()
+    if not resolveStaminaUpvalue() then return false end
+    return pcall(staminaSetupValue, staminaGetter, staminaUpvalueIndex, 200)
+end
+
+local AC_CONFIG = {
+    AIR_GUARD = 2.5,
+    SAFE_MULTIPLIER = 2,
+    VehicleAttrs = setmetatable({}, { __mode = "k" })
+}
+
+AC_CONFIG.getSafeMultiplier = function()
+    local multiplier = math.clamp((values.vehicleAltSpeed or 200) / 100, 1, 6)
+    if not values.vehicleAltRisky then
+        multiplier = math.min(multiplier, AC_CONFIG.SAFE_MULTIPLIER)
+    end
+    return multiplier
+end
+
+AC_CONFIG.resolveController = function()
+    if AC_CONFIG.Controller then return AC_CONFIG.Controller end
+    local ok, controller = pcall(function()
+        return require(ReplicatedStorage:WaitForChild("ClientModules", 5):WaitForChild("MovementController", 5))
+    end)
+    if ok and type(controller) == "table" then AC_CONFIG.Controller = controller return controller end
+    return nil
+end
+
+AC_CONFIG.resolveGeometry = function()
+    if AC_CONFIG.Geometry then return AC_CONFIG.Geometry end
+    local ok, geometry = pcall(function()
+        return require(ReplicatedStorage:WaitForChild("SharedModules", 5):WaitForChild("AntiCheatGeometry", 5))
+    end)
+    if ok and type(geometry) == "table" then AC_CONFIG.Geometry = geometry end
+    return AC_CONFIG.Geometry
+end
+
+AC_CONFIG.updateAirborne = function(vehicle, deltaTime)
+    local geometry = AC_CONFIG.resolveGeometry()
+    if not vehicle or not geometry or type(geometry.IsVehicleGrounded) ~= "function" then
+        AC_CONFIG.AirborneSince = nil
+        return false
+    end
+    AC_CONFIG.GroundPoll = (AC_CONFIG.GroundPoll or 0) + deltaTime
+    if AC_CONFIG.GroundPoll >= 0.15 then
+        AC_CONFIG.GroundPoll = 0
+        local ok, grounded = pcall(geometry.IsVehicleGrounded, vehicle)
+        if ok and grounded then
+            AC_CONFIG.AirborneSince = nil
+        elseif ok and not AC_CONFIG.AirborneSince then
+            AC_CONFIG.AirborneSince = os.clock()
+        end
+    end
+    local since = AC_CONFIG.AirborneSince
+    return since ~= nil and (os.clock() - since) >= AC_CONFIG.AIR_GUARD
+end
+
+AC_CONFIG.resolveVehicle = function(humanoid)
+    if not humanoid then return nil end
+    if VehicleUtil then
+        local ok, vehicle = pcall(function() return VehicleUtil:GetHumanoidDrivenVehicle(humanoid) end)
+        if ok and vehicle then return vehicle end
+    end
+    return getDrivenVehicle()
+end
+
+AC_CONFIG.boostVehicle = function(vehicle)
+    if not vehicle or not vehicle.Parent then return false end
+    local saved = AC_CONFIG.VehicleAttrs[vehicle]
+    if not saved then
+        saved = {
+            Top = vehicle:GetAttribute("TopSpeedMultiplier"),
+            Power = vehicle:GetAttribute("EnginePowerMultiplier")
+        }
+        AC_CONFIG.VehicleAttrs[vehicle] = saved
+    end
+    local top = saved.Top or 1
+    local power = saved.Power or 1
+    local multiplier = AC_CONFIG.getSafeMultiplier()
+    local target = top * multiplier
+    local current = vehicle:GetAttribute("TopSpeedMultiplier")
+    if type(current) == "number" and math.abs(current - target) < 0.001 then return true end
+    return (pcall(function()
+        vehicle:SetAttribute("TopSpeedMultiplier", target)
+        vehicle:SetAttribute("EnginePowerMultiplier", power * multiplier)
+    end))
+end
+
+AC_CONFIG.restoreVehicles = function()
+    for vehicle, saved in pairs(AC_CONFIG.VehicleAttrs) do
+        if vehicle and vehicle.Parent then
+            pcall(function()
+                vehicle:SetAttribute("TopSpeedMultiplier", saved.Top)
+                vehicle:SetAttribute("EnginePowerMultiplier", saved.Power)
+            end)
+        end
+        AC_CONFIG.VehicleAttrs[vehicle] = nil
+    end
+end
+
+AC_CONFIG.setSpeedModifier = function(delta)
+    local controller = AC_CONFIG.resolveController()
+    if not controller then return false end
+    if delta and math.abs((AC_CONFIG.AppliedDelta or 0) - delta) < 0.01 then return true end
+    AC_CONFIG.AppliedDelta = delta
+    return pcall(function() controller:SetWalkSpeedModifier("JorikHub", delta) end)
+end
+
+AC_CONFIG.describeBoost = function()
+    local character = player.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    local vehicle = humanoid and AC_CONFIG.resolveVehicle(humanoid)
+    if not vehicle then return "Sit in the driver seat first" end
+    local gears = vehicle:FindFirstChild("Gears")
+    local best = 0
+    if gears then
+        for _, gear in ipairs(gears:GetChildren()) do
+            local maxSpeed = gear:GetAttribute("MaxSpeed")
+            if type(maxSpeed) == "number" then best = math.max(best, math.abs(maxSpeed)) end
+        end
+    end
+    if best <= 0 then return vehicle.Name .. ": Custom speed calculation active" end
+    local multiplier = AC_CONFIG.getSafeMultiplier()
+    return string.format("%s: %d mph -> %d mph (x%.2f)", vehicle.Name, math.floor(best + 0.5), math.floor(best * multiplier + 0.5), multiplier)
+end
+
+local function restoreSpeed()
+    AC_CONFIG.setSpeedModifier(nil)
+    AC_CONFIG.AppliedDelta = nil
+    AC_CONFIG.AirborneSince = nil
+    AC_CONFIG.FootAirSince = nil
+    AC_CONFIG.restoreVehicles()
+end
+
+local mobileSpeedGui, mobileSpeedBtn, mobileStroke, statusDot
+
+local function createMobileSpeedButton()
+    if mobileSpeedGui then return end
+    
+    mobileSpeedGui = Instance.new("ScreenGui")
+    mobileSpeedGui.Name = "JorikHubMobileSpeed"
+    mobileSpeedGui.ResetOnSpawn = false
+    mobileSpeedGui.Parent = CoreGui:FindFirstChild("RobloxGui") or player:WaitForChild("PlayerGui")
+
+    mobileSpeedBtn = Instance.new("TextButton")
+    mobileSpeedBtn.Name = "SpeedToggle"
+    mobileSpeedBtn.Size = UDim2.fromOffset(64, 64)
+    mobileSpeedBtn.Position = UDim2.new(0.82, 0, 0.45, 0)
+    mobileSpeedBtn.BackgroundColor3 = Color3.fromHex("#181124")
+    mobileSpeedBtn.Text = "SPD"
+    mobileSpeedBtn.TextColor3 = Color3.fromHex("#a855f7")
+    mobileSpeedBtn.TextSize = 18
+    mobileSpeedBtn.Font = Enum.Font.GothamBold
+    mobileSpeedBtn.Active = true
+    mobileSpeedBtn.Visible = false
+    mobileSpeedBtn.Parent = mobileSpeedGui
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0.5, 0)
+    corner.Parent = mobileSpeedBtn
+
+    mobileStroke = Instance.new("UIStroke")
+    mobileStroke.Thickness = 2.5
+    mobileStroke.Color = Color3.fromHex("#7c3aed")
+    mobileStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    mobileStroke.Parent = mobileSpeedBtn
+
+    statusDot = Instance.new("Frame")
+    statusDot.Size = UDim2.fromOffset(10, 10)
+    statusDot.Position = UDim2.new(0.7, 0, 0.15, 0)
+    statusDot.BackgroundColor3 = Color3.fromHex("#ef4444")
+    statusDot.Parent = mobileSpeedBtn
+
+    local dotCorner = Instance.new("UICorner")
+    dotCorner.CornerRadius = UDim.new(1, 0)
+    dotCorner.Parent = statusDot
+
+    local dragging, dragStart, startPos
+
+    mobileSpeedBtn.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = mobileSpeedBtn.Position
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            mobileSpeedBtn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+
+    mobileSpeedBtn.MouseButton1Click:Connect(function()
+        altHeld = not altHeld
+        if altHeld then
+            TweenService:Create(mobileSpeedBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromHex("#7c3aed")}):Play()
+            TweenService:Create(mobileStroke, TweenInfo.new(0.2), {Color3 = Color3.fromHex("#c084fc")}):Play()
+            mobileSpeedBtn.TextColor3 = Color3.fromHex("#ffffff")
+            statusDot.BackgroundColor3 = Color3.fromHex("#22c55e")
+        else
+            TweenService:Create(mobileSpeedBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromHex("#181124")}):Play()
+            TweenService:Create(mobileStroke, TweenInfo.new(0.2), {Color3 = Color3.fromHex("#7c3aed")}):Play()
+            mobileSpeedBtn.TextColor3 = Color3.fromHex("#a855f7")
+            statusDot.BackgroundColor3 = Color3.fromHex("#ef4444")
+            restoreSpeed()
+        end
+    end)
+end
+
+local function updateMobileSpeedButtonVisibility()
+    if not mobileSpeedBtn then createMobileSpeedButton() end
+    local shouldShow = isMobile and (runtimeFeatures.speedHack or runtimeFeatures.vehicleSpeed)
+    mobileSpeedBtn.Visible = shouldShow
+    if not shouldShow and altHeld then
+        altHeld = false
+        mobileSpeedBtn.BackgroundColor3 = Color3.fromHex("#181124")
+        mobileSpeedBtn.TextColor3 = Color3.fromHex("#a855f7")
+        statusDot.BackgroundColor3 = Color3.fromHex("#ef4444")
+        restoreSpeed()
+    end
+end
+
+UserInputService.InputBegan:Connect(function(input)
+    if input.KeyCode == Enum.KeyCode.LeftAlt or input.KeyCode == Enum.KeyCode.RightAlt then
+        if not UserInputService:GetFocusedTextBox() then altHeld = true end
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.KeyCode == Enum.KeyCode.LeftAlt or input.KeyCode == Enum.KeyCode.RightAlt then
+        altHeld = UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt) or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt)
+        if not altHeld and not runtimeFeatures.mobileSpeedToggle then restoreSpeed() end
+    end
+end)
+
+local fuelPatchAccumulator = 0
+
+RunService.Heartbeat:Connect(function(deltaTime)
+    if runtimeFeatures.infiniteFuel then
+        fuelPatchAccumulator = fuelPatchAccumulator + deltaTime
+        if fuelPatchAccumulator >= 0.05 then
+            fuelPatchAccumulator = 0
+            local vehicle, root = getDrivenVehicle()
+            if vehicle then patchVehicleFuel(vehicle, root) end
+        end
+    end
+
+    local isSpeedActive = altHeld or (isMobile and runtimeFeatures.mobileSpeedToggle)
+    if isSpeedActive then
+        local character = player.Character
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        if humanoid and not humanoid.SeatPart and runtimeFeatures.speedHack then
+            local base = 16
+            pcall(function() base = game.StarterPlayer.CharacterWalkSpeed end)
+            if humanoid.FloorMaterial == Enum.Material.Air then
+                AC_CONFIG.FootAirSince = AC_CONFIG.FootAirSince or os.clock()
+            else
+                AC_CONFIG.FootAirSince = nil
+            end
+            if AC_CONFIG.FootAirSince and os.clock() - AC_CONFIG.FootAirSince >= AC_CONFIG.AIR_GUARD then
+                AC_CONFIG.setSpeedModifier(nil)
+            else
+                AC_CONFIG.setSpeedModifier(values.altSpeed - base)
+            end
+        elseif humanoid and runtimeFeatures.vehicleSpeed then
+            local seat = humanoid.SeatPart
+            local root = seat and (seat.AssemblyRootPart or seat)
+            if root then
+                local vehicle = AC_CONFIG.resolveVehicle(humanoid)
+                if AC_CONFIG.updateAirborne(vehicle, deltaTime) then
+                    local velocity = root.AssemblyLinearVelocity
+                    root.AssemblyLinearVelocity = Vector3.new(velocity.X, math.min(velocity.Y, -40), velocity.Z)
+                else
+                    AC_CONFIG.boostVehicle(vehicle)
+                end
+            end
+        end
+    end
+
+    if runtimeFeatures.infiniteStamina then
+        refillStamina()
+    end
+end)
+
+pcall(function()
+    WindUI:AddTheme({
+        Name = "Jorik Classic",
+        Accent = Color3.fromHex("#7c3aed"),      
+        Background = Color3.fromHex("#100c19"),  
+        Outline = Color3.fromHex("#2d2442"),     
+        Text = Color3.fromHex("#ffffff"),
+        Placeholder = Color3.fromHex("#7c7289"),
+        Button = Color3.fromHex("#6d28d9"),
+        Icon = Color3.fromHex("#c084fc"),
+    })
+end)
+
+local currentKey = Enum.KeyCode.RightShift
+
+local Window = WindUI:CreateWindow({
+    Title = "JorikMod/San Diego", 
+    Author = "by ITZ_BECON061", 
+    Folder = "myhub",
+    Icon = "paint-bucket",
+    Theme = "Jorik Classic", 
+    Acrylic = true,
+    Transparent = true,
+    Background = finalBg,
+    Size = UDim2.fromOffset(values.uiWidth, values.uiHeight),
+    MinSize = Vector2.new(560, 350),
+    MaxSize = Vector2.new(850, 560),
+    ToggleKey = currentKey,
+    Resizable = true,
+    AutoScale = true,
+    BackgroundImageTransparency = 1,
+    HideSearchBar = false,
+    ScrollBarEnabled = false,
+    SideBarWidth = isMobile and 130 or 200,
+    Topbar = {
+        Height = 44,
+        ButtonsType = "Default",
+    },
+    OpenButton = {
+        Title = "JorikMod/San Diego", 
+        Icon = "zap",
+        CornerRadius = UDim.new(1, 0),
+        StrokeThickness = 3,
+        Enabled = true,
+        Draggable = true,
+        OnlyMobile = false,
+        Scale = 1,
+        Color = ColorSequence.new(Color3.fromHex("#000000"), Color3.fromHex("#000000")),
+    },
+    User = {
+        Enabled = true,
+        Anonymous = false,
+        Callback = function() end,
+    },
+})
+
+task.spawn(function()
+    local VehicleTab = Window:Tab({ Title = "Vehicle", Icon = "car" })
+    local VSec = VehicleTab:Section({ Title = "Vehicle Physics & Speeds" })
+    
+    VSec:Toggle({
+        Title = "Physics Ram",
+        Value = false,
+        Callback = function(s)
+            if s then runFeatureSource(RAM_SOURCE, "@JorikHub/PhysicsRam") else stopFeature("VehiclePhysRamCleanup") end
+        end
+    })
+
+    VSec:Toggle({
+        Title = "Vehicle Anti-Collision",
+        Value = false,
+        Callback = function(s)
+            if s then runFeatureSource(COLLISION_SOURCE, "@JorikHub/VehicleAntiCollision") else stopFeature("VehicleCollisionOnlyCleanup") end
+        end
+    })
+
+    VSec:Toggle({
+        Title = "Border Gate Anti-Collision",
+        Value = false,
+        Callback = function(s)
+            if s then runFeatureSource(GATE_SOURCE, "@JorikHub/GateBarrier") else stopFeature("GateBarrierCollisionCleanup") end
+        end
+    })
+
+    VSec:Toggle({
+        Title = "Remove Border Speed Limit",
+        Value = false,
+        Callback = function(s)
+            if s then startBorderSpeedLimitRemoval() else stopBorderSpeedLimitRemoval() end
+        end
+    })
+
+    VSec:Toggle({
+        Title = "Infinite Fuel",
+        Value = false,
+        Callback = function(s)
+            runtimeFeatures.infiniteFuel = s
+            if s then
+                local vehicle, root = getDrivenVehicle()
+                if vehicle then patchVehicleFuel(vehicle, root) end
+            end
+        end
+    })
+
+    VSec:Toggle({
+        Title = "Anti PIT",
+        Value = false,
+        Callback = function(s)
+            if s then refreshAntiPitConnections() else enableSignalConnections(disabledPitConnections) end
+        end
+    })
+
+    VSec:Toggle({
+        Title = "Vehicle Speed (Alt / Mobile)",
+        Value = false,
+        Callback = function(s)
+            runtimeFeatures.vehicleSpeed = s
+            updateMobileSpeedButtonVisibility()
+            if not s then AC_CONFIG.restoreVehicles() end
+        end
+    })
+
+    VSec:Slider({
+        Title = "Vehicle Speed Value",
+        Min = 100, Max = 400, Value = values.vehicleAltSpeed,
+        Callback = function(v) values.vehicleAltSpeed = v end
+    })
+
+    VSec:Toggle({
+        Title = "Ignore AntiTp Safe Cap",
+        Value = false,
+        Callback = function(s) values.vehicleAltRisky = s end
+    })
+
+    VSec:Button({
+        Title = "Show boost for current vehicle",
+        Callback = function()
+            local info = AC_CONFIG.describeBoost()
+            WindUI:Notify({ Title = "Vehicle Boost Info", Content = info })
+        end
+    })
+end)
+
+task.spawn(function()
+    local PlayerTab = Window:Tab({ Title = "Player", Icon = "user" })
+    local PSec = PlayerTab:Section({ Title = "Character & Combat" })
+
+    PSec:Toggle({
+        Title = "No Recoil",
+        Value = false,
+        Callback = function(s)
+            if s then runFeatureSource(NO_RECOIL_SOURCE, "@JorikHub/NoRecoil") else stopFeature("CarunoNoRecoilCleanup") end
+        end
+    })
+
+    PSec:Toggle({
+        Title = "Speed Hack (Alt / Mobile)",
+        Value = false,
+        Callback = function(s)
+            runtimeFeatures.speedHack = s
+            updateMobileSpeedButtonVisibility()
+            if not s then restoreSpeed() end
+        end
+    })
+
+    if isMobile then
+        PSec:Toggle({
+            Title = "Always Active Mobile Speed",
+            Value = false,
+            Callback = function(s)
+                runtimeFeatures.mobileSpeedToggle = s
+                if not s then restoreSpeed() end
+            end
+        })
+    end
+
+    PSec:Slider({
+        Title = "WalkSpeed Value",
+        Min = 24, Max = 120, Value = values.altSpeed,
+        Callback = function(v) values.altSpeed = v end
+    })
+
+    PSec:Toggle({
+        Title = "Infinite Stamina",
+        Value = false,
+        Callback = function(s)
+            runtimeFeatures.infiniteStamina = s
+            if s then refillStamina() end
+        end
+    })
+end)
+
+task.spawn(function()
+    local ThemeTab = Window:Tab({ Title = "Settings", Icon = "settings" })
+    local SSecVisual = ThemeTab:Section({ Title = "Visuals & Transparency" })
+
+    SSecVisual:Dropdown({
+        Title = "Theme",
+        Values = (function()
+            local names = {}
+            for name in pairs(WindUI:GetThemes()) do
+                table.insert(names, name)
+            end
+            table.sort(names)
+            return names
+        end)(),
+        Value = WindUI:GetCurrentTheme(),
+        Callback = function(selected) WindUI:SetTheme(selected) end,
+    })
+
+    SSecVisual:Toggle({
+        Title = "Acrylic",
+        Value = Window.Acrylic,
+        Callback = function() Window:ToggleAcrylic(not Window.Acrylic) end,
+    })
+
+    SSecVisual:Toggle({
+        Title = "Transparent",
+        Value = false,
+        Callback = function(state) Window:ToggleTransparency(state) end
+    })
+
+    local SSecBinds = ThemeTab:Section({ Title = "Keybinds & Size" })
+
+    SSecBinds:Keybind({
+        Title = "Toggle UI Key",
+        Value = currentKey,
+        Callback = function(v)
+            currentKey = (typeof(v) == "EnumItem") and v or Enum.KeyCode[v]
+            Window:SetToggleKey(currentKey)
+        end,
+    })
+
+    SSecBinds:Slider({
+        Title = "UI Width",
+        Min = 300, Max = 900, Value = values.uiWidth,
+        Callback = function(w)
+            values.uiWidth = w
+            Window:Resize(UDim2.fromOffset(values.uiWidth, values.uiHeight))
+        end
+    })
+
+    SSecBinds:Slider({
+        Title = "UI Height",
+        Min = 200, Max = 600, Value = values.uiHeight,
+        Callback = function(h)
+            values.uiHeight = h
+            Window:Resize(UDim2.fromOffset(values.uiWidth, values.uiHeight))
+        end
+    })
+
+    local SSecManagement = ThemeTab:Section({ Title = "Management" })
+
+    SSecManagement:Button({
+        Title = "Unload Hub Script",
+        Callback = function()
+            stopFeature("VehiclePhysRamCleanup")
+            stopFeature("VehicleCollisionOnlyCleanup")
+            stopFeature("GateBarrierCollisionCleanup")
+            stopFeature("CarunoNoRecoilCleanup")
+            stopBorderSpeedLimitRemoval()
+            enableSignalConnections(disabledPitConnections)
+            runtimeFeatures.infiniteFuel = false
+            runtimeFeatures.infiniteStamina = false
+            restoreSpeed()
+            if mobileSpeedGui then mobileSpeedGui:Destroy() end
+            if type(Window.Destroy) == "function" then Window:Destroy() end
+        end
+    })
+end)
+
+createMobileSpeedButton()
+
+pcall(function()
+    WindUI:Notify({
+        Title = "JorikMod/San Diego",
+        Content = "Welcome to JorikMod/San Diego!",
+    })
+    WindUI:SetNotificationLower(true)
+end)
